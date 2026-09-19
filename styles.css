@@ -975,3 +975,286 @@ kbd {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   Mobile & Touch Responsiveness
+   Optimized for Phones (iOS / Android) and Tablets
+   ========================================================================== */
+
+/* Utility: hide mobile-only elements on desktop */
+.mobile-only {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: inline-flex !important;
+  }
+
+  /* 1. Prevent mobile unwanted pull/bounce */
+  html, body {
+    height: 100dvh;
+    height: 100vh;
+    overflow: hidden;
+    touch-action: pan-x pan-y;
+  }
+
+  /* 2. Hide keyboard shortcuts on touch devices */
+  kbd {
+    display: none !important;
+  }
+
+  /* 3. Header Dock - Compact & thumb-friendly */
+  .app-header-wrapper {
+    padding: 8px 10px 4px 10px;
+  }
+
+  .app-header {
+    height: 48px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .brand-section {
+    gap: 6px;
+  }
+
+  .brand-avatar-badge {
+    padding: 3px 8px 3px 3px;
+    gap: 6px;
+  }
+
+  .brand-memoji {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
+
+  .brand-title {
+    font-size: 12px;
+  }
+
+  .doc-status-chip {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+
+  .header-actions .btn {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  #btn-sample-file {
+    display: none; /* Keep header clean on mobile; available in empty state */
+  }
+
+  .toolbar-divider {
+    display: none;
+  }
+
+  /* 4. Main Stage & Body Container */
+  .app-body {
+    padding: 4px 8px 80px 8px;
+    gap: 0;
+  }
+
+  /* 5. Mobile Off-Canvas Sidebar Drawer */
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 82vw;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 500;
+    transform: translateX(-105%);
+    transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+    box-shadow: 12px 0 40px rgba(15, 23, 42, 0.25);
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .app-sidebar.mobile-open {
+    transform: translateX(0) !important;
+    width: 280px !important;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 490;
+    opacity: 0;
+    transition: opacity 0.26s ease;
+  }
+
+  .sidebar-backdrop.show {
+    display: block !important;
+    opacity: 1 !important;
+  }
+
+  /* Always show thumbnail action buttons on touch */
+  .thumbnail-actions {
+    opacity: 1 !important;
+  }
+
+  /* 6. Viewport Canvas Container */
+  .viewport-container {
+    padding: 12px 6px 96px 6px;
+    border-radius: var(--radius-lg);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .pdf-page-wrapper {
+    touch-action: pan-x pan-y;
+  }
+
+  .pdf-page-wrapper.touch-drawing {
+    touch-action: none !important;
+  }
+
+  /* 7. Bottom Floating Main Toolbar Dock (Thumb Zone) */
+  .main-toolbar-wrapper {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 6px)) 10px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border-glass);
+    box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
+    z-index: 100;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .main-toolbar-wrapper::-webkit-scrollbar {
+    display: none;
+  }
+
+  .main-toolbar {
+    height: auto;
+    min-height: 44px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    width: max-content;
+    gap: 8px;
+    padding: 2px 4px;
+  }
+
+  .tool-btn {
+    height: 36px;
+    padding: 0 11px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* 8. Options Bar (Floats right above the bottom toolbar) */
+  .tool-options-wrapper {
+    position: fixed;
+    bottom: calc(58px + env(safe-area-inset-bottom, 6px));
+    left: 8px;
+    right: 8px;
+    padding: 0;
+    z-index: 95;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tool-options-wrapper::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tool-options-bar {
+    height: 40px;
+    width: max-content;
+    min-width: 100%;
+    gap: 12px;
+    padding: 0 12px;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.12);
+  }
+
+  /* 9. Empty State on Mobile */
+  .empty-state {
+    padding: 20px 14px;
+  }
+
+  .empty-state h2 {
+    font-size: 20px !important;
+  }
+
+  .bento-showcase {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  /* 10. Modals on Mobile */
+  .modal-dialog {
+    width: 95vw;
+    max-width: 440px;
+    margin: 12px;
+    border-radius: var(--radius-lg);
+  }
+
+  .modal-header {
+    padding: 14px 18px 10px 18px;
+  }
+
+  .modal-body {
+    padding: 12px 18px 18px 18px;
+  }
+
+  .modal-footer {
+    padding: 12px 18px;
+  }
+
+  .modal-footer .btn {
+    height: 40px;
+    font-size: 13px;
+  }
+
+  /* 11. Toast positioning on Mobile */
+  .toast-container {
+    bottom: calc(70px + env(safe-area-inset-bottom, 6px));
+    right: 12px;
+    left: 12px;
+    align-items: center;
+  }
+
+  .toast {
+    width: auto;
+    max-width: 90vw;
+  }
+}
+
+/* Extra small mobile adjustments (phones <= 420px) */
+@media (max-width: 420px) {
+  .brand-title {
+    display: none;
+  }
+  
+  .header-actions .btn {
+    padding: 0 8px;
+  }
+}

@@ -135,6 +135,9 @@ const elements = {
   
   // Sidebar
   appSidebar: document.getElementById('app-sidebar'),
+  sidebarBackdrop: document.getElementById('sidebar-backdrop'),
+  btnMobileSidebarToggle: document.getElementById('btn-mobile-sidebar-toggle'),
+  btnCloseSidebarMobile: document.getElementById('btn-close-sidebar-mobile'),
   thumbnailList: document.getElementById('thumbnail-list'),
   sidebarPageCount: document.getElementById('sidebar-page-count'),
   sidebarAddPage: document.getElementById('sidebar-add-page'),
@@ -245,6 +248,11 @@ async function loadPDFFromBytes(bytes, name = 'document.pdf') {
     await renderCurrentPage();
     await renderThumbnails();
     
+    // Auto-fit to width on mobile screens
+    if (window.innerWidth <= 768 && elements.btnZoomFit) {
+      setTimeout(() => elements.btnZoomFit.click(), 80);
+    }
+    
     showToast(`Loaded ${name} (${state.numPages} pages)`, 'success');
   } catch (err) {
     console.error('Failed to load PDF:', err);
@@ -341,26 +349,34 @@ async function renderPdfTextLayer(page, viewport) {
   }
 }
 
-// Smart Text Selection & Erase Listener
-document.addEventListener('mouseup', (e) => {
-  if (e.target.closest('#text-selection-pill')) return;
+// Smart Text Selection & Erase Listener (Mouse & Touch)
+function handleTextSelectionChange(e) {
+  if (e && e.target && e.target.closest('#text-selection-pill')) return;
   
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
   
-  if (selectedText && elements.textLayer.contains(selection.anchorNode)) {
+  if (selectedText && elements.textLayer && elements.textLayer.contains(selection.anchorNode)) {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     
     if (rect.width > 0 && rect.height > 0) {
       elements.textSelectionPill.style.display = 'flex';
-      elements.textSelectionPill.style.left = `${Math.max(20, rect.left + (rect.width / 2) - 80)}px`;
-      elements.textSelectionPill.style.top = `${Math.max(60, rect.top - 38)}px`;
+      const left = Math.max(10, Math.min(window.innerWidth - 180, rect.left + (rect.width / 2) - 80));
+      const top = Math.max(50, rect.top - 44);
+      elements.textSelectionPill.style.left = `${left}px`;
+      elements.textSelectionPill.style.top = `${top}px`;
       return;
     }
   }
   
   elements.textSelectionPill.style.display = 'none';
+}
+
+document.addEventListener('mouseup', handleTextSelectionChange);
+document.addEventListener('touchend', (e) => {
+  // Brief timeout to let mobile selection finalize
+  setTimeout(() => handleTextSelectionChange(e), 60);
 });
 
 // Click "Erase Selected Text" Action Pill
@@ -637,14 +653,16 @@ function addResizeHandle(el, ann, position) {
   const handle = document.createElement('div');
   handle.className = `resize-handle handle-${position}`;
   
-  handle.addEventListener('mousedown', (e) => {
+  handle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
+    if (e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId);
+    
     const startX = e.clientX;
     const startY = e.clientY;
     const initW = ann.pdfWidth;
     const initH = ann.pdfHeight;
     
-    function onMouseMove(moveEvt) {
+    function onPointerMove(moveEvt) {
       const dx = (moveEvt.clientX - startX) / state.zoom;
       const dy = (moveEvt.clientY - startY) / state.zoom;
       ann.pdfWidth = Math.max(8, initW + dx);
@@ -653,21 +671,24 @@ function addResizeHandle(el, ann, position) {
       renderAnnotations();
     }
     
-    function onMouseUp() {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+    function onPointerUp(upEvt) {
+      if (handle.releasePointerCapture) {
+        try { handle.releasePointerCapture(upEvt.pointerId); } catch (_) {}
+      }
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
     }
     
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   });
   
   el.appendChild(handle);
 }
 
-// Drag Annotation with PDF Coordinate Mapping
+// Drag Annotation with PDF Coordinate Mapping (Mouse & Touch)
 function setupDragAnnotation(el, ann) {
-  el.addEventListener('mousedown', (e) => {
+  el.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.element-badge-controls') || e.target.classList.contains('resize-handle')) return;
     if (el.contentEditable === 'true' && document.activeElement === el) return;
     
@@ -676,7 +697,7 @@ function setupDragAnnotation(el, ann) {
     const initialPdfX = ann.pdfX;
     const initialPdfY = ann.pdfY;
     
-    function onMouseMove(moveEvt) {
+    function onPointerMove(moveEvt) {
       const dxScreen = (moveEvt.clientX - startScreenX) * state.scaleFactor;
       const dyScreen = (moveEvt.clientY - startScreenY) * state.scaleFactor;
       
@@ -692,26 +713,26 @@ function setupDragAnnotation(el, ann) {
       renderAnnotations();
     }
     
-    function onMouseUp() {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+    function onPointerUp(upEvt) {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
     }
     
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   });
 }
 
 // -------------------------------------------------------------
-// Interactive Drawing & Canvas Actions (Option C: Freehand Pen)
+// Interactive Drawing & Canvas Actions (Option C: Freehand Pen - Touch & Mouse)
 // -------------------------------------------------------------
-elements.viewportContainer.addEventListener('mousedown', (e) => {
+elements.viewportContainer.addEventListener('pointerdown', (e) => {
   if (!e.target.closest('#annotation-layer') && !e.target.closest('.annotation-element')) {
     deselectAllAnnotations();
   }
 });
 
-elements.annotationLayer.addEventListener('mousedown', (e) => {
+elements.annotationLayer.addEventListener('pointerdown', (e) => {
   if (e.target.closest('.annotation-element')) return;
   if (!state.currentViewport) return;
   
@@ -768,6 +789,9 @@ elements.annotationLayer.addEventListener('mousedown', (e) => {
     state.isDrawing = true;
     state.drawStartCanvasX = canvasX;
     state.drawStartCanvasY = canvasY;
+    if (e.target.setPointerCapture) {
+      try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    }
   }
   // 3. Freehand Draw / Signature (Option C)
   else if (state.activeTool === 'draw') {
@@ -783,10 +807,13 @@ elements.annotationLayer.addEventListener('mousedown', (e) => {
     ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(canvasX, canvasY);
+    if (e.target.setPointerCapture) {
+      try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    }
   }
 });
 
-elements.viewportContainer.addEventListener('mousemove', (e) => {
+window.addEventListener('pointermove', (e) => {
   if (!state.isDrawing) return;
   
   const rect = elements.annotationLayer.getBoundingClientRect();
@@ -816,7 +843,7 @@ elements.viewportContainer.addEventListener('mousemove', (e) => {
   }
 });
 
-elements.viewportContainer.addEventListener('mouseup', (e) => {
+window.addEventListener('pointerup', (e) => {
   if (!state.isDrawing) return;
   state.isDrawing = false;
   
@@ -1022,6 +1049,9 @@ async function renderThumbnails() {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.thumbnail-actions')) return;
       goToPage(pageNum);
+      if (window.innerWidth <= 768) {
+        closeMobileSidebar();
+      }
     });
     
     // Quick Up / Down Reorder Buttons
@@ -1221,10 +1251,11 @@ elements.zoomDisplay.addEventListener('click', () => {
 });
 
 elements.btnZoomFit.addEventListener('click', () => {
-  const containerWidth = elements.viewportContainer.clientWidth - 80;
-  if (state.currentViewport && containerWidth > 100) {
+  const padding = (window.innerWidth <= 768) ? 20 : 80;
+  const containerWidth = elements.viewportContainer.clientWidth - padding;
+  if (state.currentViewport && containerWidth > 40) {
     const naturalWidth = state.currentViewport.width / (state.zoom * state.scaleFactor);
-    state.zoom = Math.max(0.5, Math.min(2.0, containerWidth / naturalWidth));
+    state.zoom = Math.max(0.3, Math.min(2.5, containerWidth / naturalWidth));
     updateHeaderAndNav();
     renderCurrentPage();
   }
@@ -1245,6 +1276,10 @@ function setTool(toolName) {
   const isErase = (toolName === 'erase');
   const isDraw = (toolName === 'draw');
   const isSelect = (toolName === 'select');
+  
+  if (elements.pdfPageWrapper) {
+    elements.pdfPageWrapper.classList.toggle('touch-drawing', isDraw || isErase);
+  }
   
   elements.optTextSize.style.display = isText ? 'flex' : 'none';
   elements.optTextFont.style.display = isText ? 'flex' : 'none';
@@ -1716,9 +1751,40 @@ elements.btnRotatePage.addEventListener('click', async () => {
   }
 });
 
-elements.btnToggleSidebar.addEventListener('click', () => {
-  elements.appSidebar.classList.toggle('collapsed');
-});
+function openMobileSidebar() {
+  elements.appSidebar.classList.add('mobile-open');
+  if (elements.sidebarBackdrop) elements.sidebarBackdrop.classList.add('show');
+}
+
+function closeMobileSidebar() {
+  elements.appSidebar.classList.remove('mobile-open');
+  if (elements.sidebarBackdrop) elements.sidebarBackdrop.classList.remove('show');
+}
+
+function toggleSidebar() {
+  if (window.innerWidth <= 768) {
+    if (elements.appSidebar.classList.contains('mobile-open')) {
+      closeMobileSidebar();
+    } else {
+      openMobileSidebar();
+    }
+  } else {
+    elements.appSidebar.classList.toggle('collapsed');
+  }
+}
+
+if (elements.btnToggleSidebar) {
+  elements.btnToggleSidebar.addEventListener('click', toggleSidebar);
+}
+if (elements.btnMobileSidebarToggle) {
+  elements.btnMobileSidebarToggle.addEventListener('click', toggleSidebar);
+}
+if (elements.btnCloseSidebarMobile) {
+  elements.btnCloseSidebarMobile.addEventListener('click', closeMobileSidebar);
+}
+if (elements.sidebarBackdrop) {
+  elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+}
 
 // -------------------------------------------------------------
 // Save & Download Edited PDF (Bakes Text, Whiteouts, Images, Drawings)
