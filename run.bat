@@ -10,14 +10,14 @@ echo.
 where python >nul 2>nul
 if %errorlevel% equ 0 (
     echo Launching with Python...
-    python server.py
+    python local-server.py
     goto end
 )
 
 where node >nul 2>nul
 if %errorlevel% equ 0 (
     echo Launching with Node.js...
-    node server.js
+    node local-server.js
     goto end
 )
 
