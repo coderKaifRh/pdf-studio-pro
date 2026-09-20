@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#fef5ea" />
   <title>PDF Studio Pro</title>
-  <link rel="stylesheet" href="styles.css?v=2.3" />
+  <link rel="stylesheet" href="styles.css?v=2.4" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2318181b'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/></svg>">
 </head>
 <body>
@@ -543,16 +543,67 @@
     </div>
   </div>
 
-  <!-- Modal: Confirm Delete Page -->
+  <!-- Modal: Page Delete & Range Manager -->
   <div class="modal-backdrop" id="modal-confirm-delete">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-range-dialog">
       <div class="modal-header">
-        <h3 style="color: var(--c-coral);">Delete Page</h3>
+        <h3 style="color: var(--c-coral);">Delete & Manage Pages</h3>
         <button class="btn btn-circle btn-ghost btn-sm" id="btn-close-delete-modal">✕</button>
       </div>
-      <div class="modal-body">
-        <p id="delete-page-message" style="color: var(--text-secondary); font-size: 13px; font-weight: 500;">Are you sure you want to permanently delete this page?</p>
+
+      <!-- Segmented Mode Tabs: Current Page vs Page Range -->
+      <div class="range-mode-tabs">
+        <button type="button" class="range-tab-btn active" id="tab-delete-current">Current Page</button>
+        <button type="button" class="range-tab-btn" id="tab-delete-range">Page Range</button>
       </div>
+
+      <div class="modal-body">
+        <!-- View 1: Current Page -->
+        <div id="delete-current-view">
+          <p id="delete-page-message" style="color: var(--text-secondary); font-size: 13px; font-weight: 500; margin: 4px 0 16px 0;">
+            Are you sure you want to permanently delete this page?
+          </p>
+        </div>
+
+        <!-- View 2: Page Range -->
+        <div id="delete-range-view" style="display: none;">
+          <div class="range-inputs-row">
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+              <label for="range-from-page">From Page</label>
+              <input type="number" id="range-from-page" class="form-input range-num-input" min="1" value="1" />
+            </div>
+            <div class="range-arrow-divider">→</div>
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+              <label for="range-to-page">To Page</label>
+              <input type="number" id="range-to-page" class="form-input range-num-input" min="1" value="1" />
+            </div>
+          </div>
+
+          <div class="range-actions-selector">
+            <label class="range-choice-card active" id="card-choice-delete">
+              <input type="radio" name="range-action-type" id="radio-choice-delete" value="delete_range" checked />
+              <div class="choice-text">
+                <strong>🔴 Delete this range</strong>
+                <span>Removes specified pages; keeps all other pages</span>
+              </div>
+            </label>
+
+            <label class="range-choice-card" id="card-choice-keep">
+              <input type="radio" name="range-action-type" id="radio-choice-keep" value="keep_range" />
+              <div class="choice-text">
+                <strong>🟢 Keep ONLY this range</strong>
+                <span>Keeps specified pages; deletes all other pages</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Live dynamic summary pill -->
+          <div class="range-summary-box" id="range-summary-box">
+            <span id="range-summary-text">Calculating page impact...</span>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button class="btn" id="btn-cancel-delete">Cancel</button>
         <button class="btn" style="background: var(--c-coral); border-color: var(--c-coral); color: white;" id="btn-confirm-delete">Delete Page</button>
@@ -622,7 +673,7 @@
     import * as pdfjsLib from './libs/pdf.min.mjs';
     pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdf.worker.min.mjs';
     window.pdfjsLib = pdfjsLib;
-    import './app.js?v=2.3';
+    import './app.js?v=2.4';
   </script>
 </body>
 </html>

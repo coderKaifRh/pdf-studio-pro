@@ -193,6 +193,18 @@ const elements = {
   btnCancelDelete: document.getElementById('btn-cancel-delete'),
   btnConfirmDelete: document.getElementById('btn-confirm-delete'),
   deletePageMessage: document.getElementById('delete-page-message'),
+  tabDeleteCurrent: document.getElementById('tab-delete-current'),
+  tabDeleteRange: document.getElementById('tab-delete-range'),
+  deleteCurrentView: document.getElementById('delete-current-view'),
+  deleteRangeView: document.getElementById('delete-range-view'),
+  rangeFromPage: document.getElementById('range-from-page'),
+  rangeToPage: document.getElementById('range-to-page'),
+  radioChoiceDelete: document.getElementById('radio-choice-delete'),
+  radioChoiceKeep: document.getElementById('radio-choice-keep'),
+  cardChoiceDelete: document.getElementById('card-choice-delete'),
+  cardChoiceKeep: document.getElementById('card-choice-keep'),
+  rangeSummaryBox: document.getElementById('range-summary-box'),
+  rangeSummaryText: document.getElementById('range-summary-text'),
 
   modalPageTools: document.getElementById('modal-page-tools'),
   btnClosePageTools: document.getElementById('btn-close-page-tools'),
@@ -1802,20 +1814,118 @@ elements.btnExtractPage.addEventListener('click', async () => {
 });
 
 // -------------------------------------------------------------
-// Page Operations: Delete, Insert, Merge, Rotate
+// Page Operations: Delete & Range Manager
 // -------------------------------------------------------------
-function promptDeletePage(pageNum) {
+let deleteDialogMode = 'current'; // 'current' | 'range'
+
+function setDeleteDialogMode(mode) {
+  deleteDialogMode = mode;
+  if (elements.tabDeleteCurrent && elements.tabDeleteRange) {
+    elements.tabDeleteCurrent.classList.toggle('active', mode === 'current');
+    elements.tabDeleteRange.classList.toggle('active', mode === 'range');
+  }
+  if (elements.deleteCurrentView) {
+    elements.deleteCurrentView.style.display = mode === 'current' ? 'block' : 'none';
+  }
+  if (elements.deleteRangeView) {
+    elements.deleteRangeView.style.display = mode === 'range' ? 'block' : 'none';
+  }
+  if (mode === 'range') {
+    updateRangeSummary();
+  } else {
+    if (elements.btnConfirmDelete) {
+      elements.btnConfirmDelete.disabled = false;
+      elements.btnConfirmDelete.textContent = `Delete Page ${state.pageToDelete || state.currentPage}`;
+    }
+  }
+}
+
+function updateRangeSummary() {
+  if (!state.pdfDoc || state.numPages === 0) return;
+  if (!elements.rangeFromPage || !elements.rangeToPage || !elements.rangeSummaryBox) return;
+
+  let from = parseInt(elements.rangeFromPage.value, 10);
+  let to = parseInt(elements.rangeToPage.value, 10);
+
+  if (isNaN(from)) from = 1;
+  if (isNaN(to)) to = state.numPages;
+
+  const isDeleteRange = elements.radioChoiceDelete ? elements.radioChoiceDelete.checked : true;
+
+  // Validation
+  if (from < 1 || to < 1 || from > state.numPages || to > state.numPages) {
+    elements.rangeSummaryBox.className = 'range-summary-box error';
+    elements.rangeSummaryText.textContent = `⚠️ Invalid page range. Please enter numbers between 1 and ${state.numPages}.`;
+    if (elements.btnConfirmDelete) elements.btnConfirmDelete.disabled = true;
+    return;
+  }
+
+  if (from > to) {
+    elements.rangeSummaryBox.className = 'range-summary-box error';
+    elements.rangeSummaryText.textContent = `⚠️ "From Page" (${from}) cannot be greater than "To Page" (${to}).`;
+    if (elements.btnConfirmDelete) elements.btnConfirmDelete.disabled = true;
+    return;
+  }
+
+  const rangeCount = to - from + 1;
+  const otherCount = state.numPages - rangeCount;
+
+  if (isDeleteRange) {
+    if (otherCount <= 0) {
+      elements.rangeSummaryBox.className = 'range-summary-box error';
+      elements.rangeSummaryText.textContent = `⚠️ Cannot delete all ${state.numPages} pages. The document must retain at least 1 page.`;
+      if (elements.btnConfirmDelete) elements.btnConfirmDelete.disabled = true;
+      return;
+    }
+    elements.rangeSummaryBox.className = 'range-summary-box';
+    elements.rangeSummaryText.innerHTML = `<strong>Action:</strong> Will delete <strong>${rangeCount}</strong> ${rangeCount === 1 ? 'page' : 'pages'} (Pages ${from}–${to}). <strong>${otherCount}</strong> ${otherCount === 1 ? 'page' : 'pages'} will remain.`;
+    if (elements.btnConfirmDelete) {
+      elements.btnConfirmDelete.disabled = false;
+      elements.btnConfirmDelete.textContent = `Delete ${rangeCount} ${rangeCount === 1 ? 'Page' : 'Pages'}`;
+    }
+  } else {
+    if (rangeCount <= 0) {
+      elements.rangeSummaryBox.className = 'range-summary-box error';
+      elements.rangeSummaryText.textContent = `⚠️ Selected range contains 0 pages.`;
+      if (elements.btnConfirmDelete) elements.btnConfirmDelete.disabled = true;
+      return;
+    }
+    elements.rangeSummaryBox.className = 'range-summary-box';
+    elements.rangeSummaryText.innerHTML = `<strong>Action:</strong> Will keep <strong>${rangeCount}</strong> ${rangeCount === 1 ? 'page' : 'pages'} (Pages ${from}–${to}). <strong>${otherCount}</strong> other ${otherCount === 1 ? 'page' : 'pages'} will be removed.`;
+    if (elements.btnConfirmDelete) {
+      elements.btnConfirmDelete.disabled = false;
+      elements.btnConfirmDelete.textContent = `Keep Pages ${from}–${to}`;
+    }
+  }
+}
+
+function promptDeletePage(pageNum, defaultMode = 'current') {
   if (state.numPages <= 1) {
     showToast('A document must have at least one page.', 'error');
     return;
   }
-  state.pageToDelete = pageNum;
-  elements.deletePageMessage.textContent = `Are you sure you want to delete Page ${pageNum}?`;
+  state.pageToDelete = pageNum || state.currentPage;
+  if (elements.deletePageMessage) {
+    elements.deletePageMessage.textContent = `Are you sure you want to permanently delete Page ${state.pageToDelete}?`;
+  }
+
+  if (elements.rangeFromPage && elements.rangeToPage) {
+    elements.rangeFromPage.min = '1';
+    elements.rangeFromPage.max = String(state.numPages);
+    elements.rangeToPage.min = '1';
+    elements.rangeToPage.max = String(state.numPages);
+
+    // Sensible defaults
+    elements.rangeFromPage.value = '1';
+    elements.rangeToPage.value = String(state.numPages);
+  }
+
+  setDeleteDialogMode(defaultMode);
   elements.modalConfirmDelete.classList.add('show');
 }
 
 elements.btnDeletePage.addEventListener('click', () => {
-  promptDeletePage(state.currentPage);
+  promptDeletePage(state.currentPage, 'current');
 });
 
 elements.btnCancelDelete.addEventListener('click', () => {
@@ -1827,44 +1937,141 @@ elements.btnCloseDeleteModal.addEventListener('click', () => {
   state.pageToDelete = null;
 });
 
+if (elements.tabDeleteCurrent) {
+  elements.tabDeleteCurrent.addEventListener('click', () => setDeleteDialogMode('current'));
+}
+if (elements.tabDeleteRange) {
+  elements.tabDeleteRange.addEventListener('click', () => setDeleteDialogMode('range'));
+}
+if (elements.cardChoiceDelete) {
+  elements.cardChoiceDelete.addEventListener('click', () => {
+    if (elements.radioChoiceDelete) elements.radioChoiceDelete.checked = true;
+    elements.cardChoiceDelete.classList.add('active');
+    if (elements.cardChoiceKeep) elements.cardChoiceKeep.classList.remove('active');
+    updateRangeSummary();
+  });
+}
+if (elements.cardChoiceKeep) {
+  elements.cardChoiceKeep.addEventListener('click', () => {
+    if (elements.radioChoiceKeep) elements.radioChoiceKeep.checked = true;
+    elements.cardChoiceKeep.classList.add('active');
+    if (elements.cardChoiceDelete) elements.cardChoiceDelete.classList.remove('active');
+    updateRangeSummary();
+  });
+}
+if (elements.rangeFromPage) {
+  elements.rangeFromPage.addEventListener('input', updateRangeSummary);
+}
+if (elements.rangeToPage) {
+  elements.rangeToPage.addEventListener('input', updateRangeSummary);
+}
+
 elements.btnConfirmDelete.addEventListener('click', async () => {
   elements.modalConfirmDelete.classList.remove('show');
-  if (!state.pageToDelete) return;
-  
-  const pageNum = state.pageToDelete;
-  state.pageToDelete = null;
-  
-  try {
-    showLoading(`Deleting Page ${pageNum}...`);
-    state.pdfDoc.removePage(pageNum - 1);
-    
-    delete state.annotations[pageNum];
-    const newAnnotations = {};
-    Object.keys(state.annotations).forEach(k => {
-      const idx = parseInt(k, 10);
-      if (idx > pageNum) {
-        newAnnotations[idx - 1] = state.annotations[idx];
-      } else {
-        newAnnotations[idx] = state.annotations[idx];
+
+  if (deleteDialogMode === 'current') {
+    if (!state.pageToDelete) return;
+    const pageNum = state.pageToDelete;
+    state.pageToDelete = null;
+
+    try {
+      showLoading(`Deleting Page ${pageNum}...`);
+      state.pdfDoc.removePage(pageNum - 1);
+
+      delete state.annotations[pageNum];
+      const newAnnotations = {};
+      Object.keys(state.annotations).forEach(k => {
+        const idx = parseInt(k, 10);
+        if (idx > pageNum) {
+          newAnnotations[idx - 1] = state.annotations[idx];
+        } else {
+          newAnnotations[idx] = state.annotations[idx];
+        }
+      });
+      state.annotations = newAnnotations;
+
+      await syncPdfDoc();
+      state.numPages = state.pdfDoc.getPageCount();
+      if (state.currentPage > state.numPages) {
+        state.currentPage = state.numPages;
       }
-    });
-    state.annotations = newAnnotations;
-    
-    await syncPdfDoc();
-    
-    if (state.currentPage > state.numPages) {
-      state.currentPage = state.numPages;
+
+      await renderAllPages();
+      await renderThumbnails();
+      updateHeaderAndNav();
+      showToast(`Page ${pageNum} deleted`, 'success');
+    } catch (err) {
+      console.error('Failed to delete page:', err);
+      showToast('Failed to delete page: ' + err.message, 'error');
+    } finally {
+      hideLoading();
     }
-    
-    await renderAllPages();
-    await renderThumbnails();
-    updateHeaderAndNav();
-    showToast(`Page ${pageNum} deleted`, 'success');
-  } catch (err) {
-    console.error('Failed to delete page:', err);
-    showToast('Failed to delete page: ' + err.message, 'error');
-  } finally {
-    hideLoading();
+  } else if (deleteDialogMode === 'range') {
+    let from = parseInt(elements.rangeFromPage.value, 10);
+    let to = parseInt(elements.rangeToPage.value, 10);
+    const isDeleteRange = elements.radioChoiceDelete ? elements.radioChoiceDelete.checked : true;
+
+    if (isNaN(from) || isNaN(to) || from < 1 || to > state.numPages || from > to) {
+      showToast('Invalid page range provided', 'error');
+      return;
+    }
+
+    // Compute 0-based indices of pages to KEEP
+    const keptIndices = [];
+    for (let i = 1; i <= state.numPages; i++) {
+      const inRange = i >= from && i <= to;
+      if (isDeleteRange) {
+        if (!inRange) keptIndices.push(i - 1);
+      } else {
+        if (inRange) keptIndices.push(i - 1);
+      }
+    }
+
+    if (keptIndices.length === 0) {
+      showToast('Cannot delete all pages. A document must have at least 1 page.', 'error');
+      return;
+    }
+
+    try {
+      showLoading(isDeleteRange ? `Deleting Pages ${from}–${to}...` : `Keeping Pages ${from}–${to}...`);
+
+      // Create a clean new PDF containing strictly kept pages
+      const newPdfDoc = await PDFDocument.create();
+      const copiedPages = await newPdfDoc.copyPages(state.pdfDoc, keptIndices);
+      copiedPages.forEach(p => newPdfDoc.addPage(p));
+
+      // Remap annotations accurately
+      const newAnnotations = {};
+      keptIndices.forEach((old0Idx, new0Idx) => {
+        const old1Idx = old0Idx + 1;
+        const new1Idx = new0Idx + 1;
+        if (state.annotations[old1Idx]) {
+          newAnnotations[new1Idx] = state.annotations[old1Idx];
+        }
+      });
+
+      state.pdfDoc = newPdfDoc;
+      state.annotations = newAnnotations;
+
+      await syncPdfDoc();
+      state.numPages = state.pdfDoc.getPageCount();
+      state.currentPage = Math.min(Math.max(1, state.currentPage), state.numPages);
+
+      await renderAllPages();
+      await renderThumbnails();
+      updateHeaderAndNav();
+
+      if (isDeleteRange) {
+        showToast(`Pages ${from}–${to} deleted! (${state.numPages} pages remain)`, 'success');
+      } else {
+        showToast(`Kept Pages ${from}–${to}! (${state.numPages} pages remaining)`, 'success');
+      }
+    } catch (err) {
+      console.error('Failed to process page range:', err);
+      showToast('Failed to process range: ' + err.message, 'error');
+    } finally {
+      hideLoading();
+    }
   }
 });
 

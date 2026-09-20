@@ -998,6 +998,145 @@ kbd {
   gap: 8px;
 }
 
+/* Range Manager Dialog Styles */
+.modal-range-dialog {
+  max-width: 440px;
+  width: 92%;
+}
+
+.range-mode-tabs {
+  display: flex;
+  background: rgba(15, 23, 42, 0.05);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  margin: 0 22px 14px 22px;
+  gap: 4px;
+}
+
+.range-tab-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.range-tab-btn.active {
+  background: #ffffff;
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.range-inputs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.range-arrow-divider {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-top: 16px;
+}
+
+.range-num-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  border: 1.5px solid rgba(15, 23, 42, 0.12);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.range-num-input:focus {
+  border-color: var(--c-charcoal);
+  box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1);
+}
+
+.range-actions-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.range-choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1.5px solid rgba(15, 23, 42, 0.08);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: #ffffff;
+  user-select: none;
+}
+
+.range-choice-card:hover {
+  border-color: rgba(15, 23, 42, 0.2);
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.range-choice-card.active {
+  border-color: var(--c-charcoal);
+  background: rgba(244, 244, 245, 0.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.range-choice-card input[type="radio"] {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.range-choice-card .choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.range-choice-card .choice-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.range-choice-card .choice-text span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.range-summary-box {
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px dashed rgba(15, 23, 42, 0.18);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+  transition: all 0.15s ease;
+}
+
+.range-summary-box.error {
+  background: rgba(244, 63, 94, 0.08);
+  border-color: rgba(244, 63, 94, 0.35);
+  color: var(--c-coral);
+}
+
 /* Toast */
 .toast-container {
   position: fixed;
