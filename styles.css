@@ -1041,51 +1041,34 @@ kbd {
   display: none !important;
 }
 
-/* Floating Page Pill (Continuous Scroll Indicator) */
-.floating-page-pill {
+/* Minimalist Scroll Page Badge (Fades in during scrolling, zero buttons) */
+.scroll-page-badge {
   position: fixed;
-  top: 68px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 58px;
+  right: 14px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(15, 23, 42, 0.85);
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   color: #ffffff;
-  padding: 4px 12px;
+  padding: 4px 11px;
   border-radius: var(--radius-full);
   font-size: 11px;
-  font-weight: 700;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
-  z-index: 85;
-  transition: all 0.2s ease;
-  pointer-events: auto;
-}
-
-.pill-nav-btn {
-  background: rgba(255, 255, 255, 0.18);
-  border: none;
-  color: #ffffff;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 13px;
   font-weight: 800;
-  transition: background 0.15s ease;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 85;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
-.pill-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.35);
-}
-
-.pill-nav-btn:active {
-  transform: scale(0.92);
+.scroll-page-badge.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Page Tools Modal (Mobile Bottom Sheet) */
@@ -1232,8 +1215,9 @@ kbd {
     display: inline-flex !important;
   }
 
-  /* Hide Desktop Page Actions toolbar group on mobile */
-  .desktop-page-actions {
+  /* Hide Desktop Page Actions and Steppers on mobile */
+  .desktop-page-actions,
+  .desktop-only {
     display: none !important;
   }
 
@@ -1459,22 +1443,20 @@ kbd {
     touch-action: none !important;
   }
 
-  /* 7. Bottom Floating Main Toolbar Dock */
+  /* 7. Bottom Floating Main Toolbar Dock - 100% stable, zero overflow, fits all 6 core tools */
   .main-toolbar-wrapper {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 5px 8px calc(6px + env(safe-area-inset-bottom, 6px)) 8px;
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    padding: 4px 6px calc(6px + env(safe-area-inset-bottom, 6px)) 6px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--border-glass);
     box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
     z-index: 100;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    overflow: hidden !important;
     display: flex;
     justify-content: center;
   }
@@ -1485,37 +1467,68 @@ kbd {
 
   .main-toolbar {
     height: auto;
-    min-height: 40px;
+    min-height: 48px;
     background: transparent;
     border: none;
     box-shadow: none;
-    width: max-content;
-    max-width: 100%;
-    gap: 6px;
-    padding: 0 2px;
+    width: 100% !important;
+    max-width: 480px;
+    margin: 0 auto;
+    gap: 0;
+    padding: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: stretch;
+  }
+
+  .core-tools-group {
+    width: 100% !important;
+    display: flex;
+    align-items: center;
   }
 
   .segmented-control {
-    background: rgba(15, 23, 42, 0.05);
-    padding: 2px;
-    gap: 2px;
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(6, 1fr) !important;
+    background: rgba(15, 23, 42, 0.06);
+    padding: 3px;
+    gap: 3px;
+    border-radius: var(--radius-lg);
   }
 
   .tool-btn {
-    height: 34px;
-    padding: 0 9px;
-    font-size: 11px;
+    height: 44px !important;
+    padding: 2px 1px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    gap: 2px !important;
+    border-radius: var(--radius-md) !important;
+    width: 100% !important;
     white-space: nowrap;
-    gap: 4px;
+  }
+
+  .tool-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+    stroke-width: 2.2;
+  }
+
+  .tool-label {
+    display: block;
+    line-height: 1;
+    font-size: 10px;
+    font-weight: 700;
   }
 
   /* 8. Options Bar (Floats cleanly right above the bottom toolbar) */
   .tool-options-wrapper {
     position: fixed;
-    bottom: calc(52px + env(safe-area-inset-bottom, 6px));
+    bottom: calc(56px + env(safe-area-inset-bottom, 6px));
     left: 6px;
     right: 6px;
     padding: 0;
@@ -1617,7 +1630,11 @@ kbd {
   }
 
   .tool-btn {
-    padding: 0 6px;
-    font-size: 10px;
+    padding: 2px 0 !important;
+    font-size: 9.5px !important;
+  }
+  .tool-btn svg {
+    width: 15px !important;
+    height: 15px !important;
   }
 }

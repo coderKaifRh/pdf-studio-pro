@@ -158,10 +158,9 @@ const elements = {
   textSelectionPill: document.getElementById('text-selection-pill'),
   drawingCanvas: document.getElementById('drawing-canvas'),
   annotationLayer: document.getElementById('annotation-layer'),
-  floatingPagePill: document.getElementById('floating-page-pill'),
-  pillPrevPage: document.getElementById('pill-prev-page'),
-  pillNextPage: document.getElementById('pill-next-page'),
-  pillPageText: document.getElementById('pill-page-text'),
+  scrollPageBadge: document.getElementById('scroll-page-badge'),
+  scrollPageText: document.getElementById('scroll-page-text'),
+  btnMobilePagesDock: document.getElementById('btn-mobile-pages-dock'),
   emptyState: document.getElementById('empty-state'),
   btnBrowseFile: document.getElementById('btn-browse-file'),
   btnLoadSampleHero: document.getElementById('btn-load-sample-hero'),
@@ -488,18 +487,23 @@ function updateActivePageClass() {
   });
 }
 
+let scrollBadgeTimer = null;
+function showScrollPageBadge() {
+  const badge = elements.scrollPageBadge || document.getElementById('scroll-page-badge');
+  const text = elements.scrollPageText || document.getElementById('scroll-page-text');
+  if (!badge || !text || state.numPages <= 1) return;
+
+  text.textContent = `${state.currentPage} / ${state.numPages}`;
+  badge.classList.add('visible');
+
+  if (scrollBadgeTimer) clearTimeout(scrollBadgeTimer);
+  scrollBadgeTimer = setTimeout(() => {
+    badge.classList.remove('visible');
+  }, 1200);
+}
+
 function updateFloatingPagePill() {
-  if (!elements.floatingPagePill) return;
-  if (state.numPages > 1) {
-    elements.floatingPagePill.style.display = 'inline-flex';
-    if (elements.pillPageText) {
-      elements.pillPageText.textContent = `${state.currentPage} / ${state.numPages}`;
-    }
-    if (elements.pillPrevPage) elements.pillPrevPage.disabled = state.currentPage <= 1;
-    if (elements.pillNextPage) elements.pillNextPage.disabled = state.currentPage >= state.numPages;
-  } else {
-    elements.floatingPagePill.style.display = 'none';
-  }
+  showScrollPageBadge();
 }
 
 // Smart Text Selection & Erase Listener (Mouse & Touch)
@@ -1433,11 +1437,8 @@ function updateHeaderAndNav() {
 elements.btnPrevPage.addEventListener('click', () => goToPage(state.currentPage - 1));
 elements.btnNextPage.addEventListener('click', () => goToPage(state.currentPage + 1));
 
-if (elements.pillPrevPage) {
-  elements.pillPrevPage.addEventListener('click', () => goToPage(state.currentPage - 1));
-}
-if (elements.pillNextPage) {
-  elements.pillNextPage.addEventListener('click', () => goToPage(state.currentPage + 1));
+if (elements.viewportContainer) {
+  elements.viewportContainer.addEventListener('scroll', showScrollPageBadge, { passive: true });
 }
 
 elements.btnZoomIn.addEventListener('click', () => {
@@ -2015,6 +2016,12 @@ function closeMobilePageTools() {
 if (elements.btnMobilePageTools) {
   elements.btnMobilePageTools.addEventListener('click', openMobilePageTools);
 }
+
+const btnMobilePagesDock = document.getElementById('btn-mobile-pages-dock');
+if (btnMobilePagesDock) {
+  btnMobilePagesDock.addEventListener('click', toggleSidebar);
+}
+
 if (elements.btnClosePageTools) {
   elements.btnClosePageTools.addEventListener('click', closeMobilePageTools);
 }
