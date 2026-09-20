@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#fef5ea" />
   <title>PDF Studio Pro</title>
-  <link rel="stylesheet" href="styles.css?v=2.2" />
+  <link rel="stylesheet" href="styles.css?v=2.3" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2318181b'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/></svg>">
 </head>
 <body>
@@ -54,9 +54,24 @@
           </svg>
         </button>
 
-        <div class="toolbar-divider"></div>
+        <!-- Quick Rotate Page Button (Always accessible on Mobile & Desktop) -->
+        <button class="btn btn-circle btn-ghost" id="btn-header-rotate-page" title="Rotate Current Page 90° Clockwise (R)" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+        </button>
 
-        <button class="btn btn-demo" id="btn-sample-file" title="Load sample document with demo data">
+        <!-- Quick Delete Page Button (Always accessible on Mobile & Desktop) -->
+        <button class="btn btn-circle btn-ghost" id="btn-header-delete-page" title="Delete Current Page" style="color: var(--c-coral);" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+          </svg>
+        </button>
+
+        <div class="toolbar-divider desktop-only"></div>
+
+        <button class="btn btn-demo desktop-only" id="btn-sample-file" title="Load sample document with demo data">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
           </svg>
@@ -350,6 +365,17 @@
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
+          <button class="btn btn-circle btn-ghost btn-sm" id="sidebar-rotate-page" title="Rotate Current Page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+          </button>
+          <button class="btn btn-circle btn-ghost btn-sm" id="sidebar-delete-page" title="Delete Current Page" style="color: var(--c-coral);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+            </svg>
+          </button>
           <button class="btn btn-circle btn-ghost btn-sm" id="sidebar-merge-pdf" title="Merge PDF">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="18 8 22 12 18 16"></polyline>
@@ -532,6 +558,8 @@
         <button class="btn" style="background: var(--c-coral); border-color: var(--c-coral); color: white;" id="btn-confirm-delete">Delete Page</button>
       </div>
     </div>
+  </div>
+
   <!-- Modal: Mobile Page Tools Bottom Sheet -->
   <div class="modal-backdrop" id="modal-page-tools">
     <div class="modal-dialog modal-bottom-sheet">
@@ -594,7 +622,7 @@
     import * as pdfjsLib from './libs/pdf.min.mjs';
     pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdf.worker.min.mjs';
     window.pdfjsLib = pdfjsLib;
-    import './app.js?v=2.2';
+    import './app.js?v=2.3';
   </script>
 </body>
 </html>

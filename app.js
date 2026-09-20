@@ -111,6 +111,10 @@ const elements = {
   btnMergePdf: document.getElementById('btn-merge-pdf'),
   btnDeletePage: document.getElementById('btn-delete-page'),
   btnRotatePage: document.getElementById('btn-rotate-page'),
+  btnHeaderRotatePage: document.getElementById('btn-header-rotate-page'),
+  btnHeaderDeletePage: document.getElementById('btn-header-delete-page'),
+  sidebarRotatePage: document.getElementById('sidebar-rotate-page'),
+  sidebarDeletePage: document.getElementById('sidebar-delete-page'),
   btnToggleSidebar: document.getElementById('btn-toggle-sidebar'),
   
   // Steppers
@@ -278,6 +282,10 @@ async function loadPDFFromBytes(bytes, name = 'document.pdf') {
     }
     
     elements.btnSaveFile.disabled = false;
+    if (elements.btnHeaderRotatePage) elements.btnHeaderRotatePage.disabled = false;
+    if (elements.btnHeaderDeletePage) elements.btnHeaderDeletePage.disabled = state.numPages <= 1;
+    if (elements.sidebarRotatePage) elements.sidebarRotatePage.disabled = false;
+    if (elements.sidebarDeletePage) elements.sidebarDeletePage.disabled = state.numPages <= 1;
     elements.emptyState.style.display = 'none';
     if (elements.pdfPagesContainer) elements.pdfPagesContainer.style.display = 'flex';
     if (elements.pdfPageWrapper) elements.pdfPageWrapper.style.display = 'none';
@@ -342,11 +350,41 @@ async function renderAllPages() {
       wrapper.style.width = `${displayWidth}px`;
       wrapper.style.height = `${displayHeight}px`;
       
-      // Page number pill
+      // Page action pill (Page X of Y + Quick Rotate + Quick Delete)
       const pill = document.createElement('div');
-      pill.className = 'page-num-pill tabular-nums';
-      pill.textContent = `Page ${p} of ${state.numPages}`;
+      pill.className = 'page-num-pill';
+      pill.innerHTML = `
+        <span class="tabular-nums">Page ${p} of ${state.numPages}</span>
+        <button class="page-pill-btn btn-pill-rotate" title="Rotate Page ${p} 90° Clockwise">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+        </button>
+        ${state.numPages > 1 ? `
+          <button class="page-pill-btn btn-pill-delete" title="Delete Page ${p}">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+            </svg>
+          </button>
+        ` : ''}
+      `;
       wrapper.appendChild(pill);
+
+      const pillRotate = pill.querySelector('.btn-pill-rotate');
+      if (pillRotate) {
+        pillRotate.addEventListener('click', (e) => {
+          e.stopPropagation();
+          rotatePage(p);
+        });
+      }
+      const pillDel = pill.querySelector('.btn-pill-delete');
+      if (pillDel) {
+        pillDel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          promptDeletePage(p);
+        });
+      }
       
       // Render canvas
       const canvas = document.createElement('canvas');
@@ -1231,6 +1269,11 @@ async function renderThumbnails() {
       <div class="thumbnail-actions">
         ${pageNum > 1 ? `<button class="btn btn-circle btn-ghost btn-sm btn-move-up" title="Move Page Up">▲</button>` : ''}
         ${pageNum < state.numPages ? `<button class="btn btn-circle btn-ghost btn-sm btn-move-down" title="Move Page Down">▼</button>` : ''}
+        <button class="btn btn-circle btn-ghost btn-sm btn-card-rotate" title="Rotate Page ${pageNum} 90°">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+        </button>
         ${state.numPages > 1 ? `
           <button class="btn btn-circle btn-ghost btn-sm btn-card-delete" title="Delete Page ${pageNum}">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -1264,6 +1307,14 @@ async function renderThumbnails() {
       downBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         reorderSinglePage(pageNum, pageNum + 1);
+      });
+    }
+
+    const rotateCardBtn = card.querySelector('.btn-card-rotate');
+    if (rotateCardBtn) {
+      rotateCardBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        rotatePage(pageNum);
       });
     }
     
@@ -1426,11 +1477,15 @@ function goToPage(pageNum, smooth = true) {
 }
 
 function updateHeaderAndNav() {
-  elements.pageNumDisplay.textContent = state.numPages > 0 ? `${state.currentPage} / ${state.numPages}` : '0 / 0';
-  elements.btnPrevPage.disabled = state.currentPage <= 1;
-  elements.btnNextPage.disabled = state.currentPage >= state.numPages;
-  elements.btnDeletePage.disabled = state.numPages <= 1;
-  elements.zoomDisplay.textContent = `${Math.round(state.zoom * 100)}%`;
+  if (elements.pageNumDisplay) elements.pageNumDisplay.textContent = state.numPages > 0 ? `${state.currentPage} / ${state.numPages}` : '0 / 0';
+  if (elements.btnPrevPage) elements.btnPrevPage.disabled = state.currentPage <= 1;
+  if (elements.btnNextPage) elements.btnNextPage.disabled = state.currentPage >= state.numPages;
+  if (elements.btnDeletePage) elements.btnDeletePage.disabled = state.numPages <= 1;
+  if (elements.btnHeaderDeletePage) elements.btnHeaderDeletePage.disabled = state.numPages <= 1;
+  if (elements.btnHeaderRotatePage) elements.btnHeaderRotatePage.disabled = !state.pdfDoc;
+  if (elements.sidebarDeletePage) elements.sidebarDeletePage.disabled = state.numPages <= 1;
+  if (elements.sidebarRotatePage) elements.sidebarRotatePage.disabled = !state.pdfDoc;
+  if (elements.zoomDisplay) elements.zoomDisplay.textContent = `${Math.round(state.zoom * 100)}%`;
   updateFloatingPagePill();
 }
 
@@ -1801,8 +1856,9 @@ elements.btnConfirmDelete.addEventListener('click', async () => {
       state.currentPage = state.numPages;
     }
     
-    await renderCurrentPage();
+    await renderAllPages();
     await renderThumbnails();
+    updateHeaderAndNav();
     showToast(`Page ${pageNum} deleted`, 'success');
   } catch (err) {
     console.error('Failed to delete page:', err);
@@ -1947,25 +2003,44 @@ elements.btnConfirmMerge.addEventListener('click', async () => {
   }
 });
 
-// Rotate Page
-elements.btnRotatePage.addEventListener('click', async () => {
-  if (!state.pdfDoc || state.currentPage < 1) return;
+// Rotate Page (Unified for desktop, mobile header, page pills, and thumbnails)
+async function rotatePage(pageNum) {
+  const p = pageNum || state.currentPage;
+  if (!state.pdfDoc || p < 1 || p > state.numPages) return;
   try {
-    showLoading('Rotating page...');
-    const page = state.pdfDoc.getPage(state.currentPage - 1);
+    showLoading(`Rotating page ${p}...`);
+    const page = state.pdfDoc.getPage(p - 1);
     const currentRotation = page.getRotation().angle;
     page.setRotation(degrees((currentRotation + 90) % 360));
     
     await syncPdfDoc();
-    await renderCurrentPage();
+    await renderAllPages();
     await renderThumbnails();
-    showToast(`Page ${state.currentPage} rotated 90°`, 'info', 1200);
+    updateHeaderAndNav();
+    showToast(`Page ${p} rotated 90°`, 'info', 1200);
   } catch (err) {
     console.error('Failed to rotate page:', err);
+    showToast('Failed to rotate page: ' + err.message, 'error');
   } finally {
     hideLoading();
   }
-});
+}
+
+if (elements.btnRotatePage) {
+  elements.btnRotatePage.addEventListener('click', () => rotatePage(state.currentPage));
+}
+if (elements.btnHeaderRotatePage) {
+  elements.btnHeaderRotatePage.addEventListener('click', () => rotatePage(state.currentPage));
+}
+if (elements.sidebarRotatePage) {
+  elements.sidebarRotatePage.addEventListener('click', () => rotatePage(state.currentPage));
+}
+if (elements.btnHeaderDeletePage) {
+  elements.btnHeaderDeletePage.addEventListener('click', () => promptDeletePage(state.currentPage));
+}
+if (elements.sidebarDeletePage) {
+  elements.sidebarDeletePage.addEventListener('click', () => promptDeletePage(state.currentPage));
+}
 
 function openMobileSidebar() {
   elements.appSidebar.classList.add('mobile-open');
