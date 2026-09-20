@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#fef5ea" />
   <title>PDF Studio Pro</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2.2" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2318181b'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/></svg>">
 </head>
 <body>
@@ -15,10 +15,12 @@
   <div class="app-header-wrapper">
     <header class="app-header">
       <div class="brand-section">
-        <button class="btn btn-circle btn-ghost mobile-only" id="btn-mobile-sidebar-toggle" title="Pages Panel">
+        <button class="btn btn-circle btn-ghost mobile-only" id="btn-mobile-sidebar-toggle" title="Thumbnail Pages Drawer">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="9" y1="3" x2="9" y2="21"></line>
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
           </svg>
         </button>
         <div class="brand-avatar-badge">
@@ -28,7 +30,7 @@
 
         <div class="doc-status-chip">
           <span class="doc-status-indicator" id="doc-indicator"></span>
-          <span id="doc-title" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">No document</span>
+          <span id="doc-title">No document</span>
         </div>
       </div>
 
@@ -65,7 +67,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
-          Open
+          <span class="btn-label">Open</span>
           <kbd>O</kbd>
         </button>
 
@@ -75,7 +77,7 @@
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          Export PDF
+          <span class="btn-label">Export</span>
           <kbd style="color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.2);">Ctrl+S</kbd>
         </button>
       </div>
@@ -142,12 +144,21 @@
             </svg>
             Image
             <kbd>I</kbd>
-          </button>
         </div>
+
+        <button class="btn btn-sm mobile-only" id="btn-mobile-page-tools" title="Page Operations & Actions" style="border-radius: var(--radius-full); gap: 5px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          Pages
+        </button>
       </div>
 
-      <!-- Page Actions: Insert, Duplicate, Extract, Merge, Rotate, Delete -->
-      <div class="toolbar-group">
+      <!-- Page Actions (Desktop): Insert, Duplicate, Extract, Merge, Rotate, Delete -->
+      <div class="toolbar-group desktop-page-actions">
         <button class="btn" id="btn-insert-page" title="Insert a blank page">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -346,21 +357,33 @@
         </div>
       </div>
       <div class="thumbnail-list" id="thumbnail-list"></div>
+      <div class="sidebar-footer">
+        <button class="btn btn-primary btn-sidebar-export" id="sidebar-export-pdf" style="width: 100%; justify-content: center; gap: 8px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Export PDF
+        </button>
+      </div>
     </aside>
 
     <!-- Viewport Canvas Stage -->
     <main class="viewport-container" id="viewport-container">
-      <div class="pdf-page-wrapper" id="pdf-page-wrapper" style="display: none;">
-        <canvas id="pdf-canvas"></canvas>
-        <!-- PDF.js Text Layer for Smart Mouse Text Selection -->
-        <div class="text-layer" id="text-layer"></div>
-        <canvas id="drawing-canvas"></canvas>
-        <div class="annotation-layer" id="annotation-layer"></div>
-      </div>
+      <!-- Continuous Multi-Page Stream Container -->
+      <div class="pdf-pages-container" id="pdf-pages-container" style="display: none;"></div>
 
       <!-- Floating Smart Text Selection Action Pill -->
       <div id="text-selection-pill" class="text-selection-pill" style="display: none;">
         <span>✂️ Erase Selected Text</span>
+      </div>
+
+      <!-- Floating Page Indicator Pill (Smooth Touch Experience) -->
+      <div class="floating-page-pill" id="floating-page-pill" style="display: none;">
+        <button class="pill-nav-btn" id="pill-prev-page" title="Previous Page">‹</button>
+        <span id="pill-page-text" class="tabular-nums">1 / 1</span>
+        <button class="pill-nav-btn" id="pill-next-page" title="Next Page">›</button>
       </div>
 
       <!-- Bento Showcase Empty State -->
@@ -508,6 +531,58 @@
         <button class="btn" style="background: var(--c-coral); border-color: var(--c-coral); color: white;" id="btn-confirm-delete">Delete Page</button>
       </div>
     </div>
+  <!-- Modal: Mobile Page Tools Bottom Sheet -->
+  <div class="modal-backdrop" id="modal-page-tools">
+    <div class="modal-dialog modal-bottom-sheet">
+      <div class="modal-header">
+        <h3>Page Actions</h3>
+        <button class="btn btn-circle btn-ghost btn-sm" id="btn-close-page-tools">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Prominent Mobile Export & Download Card -->
+        <button class="mobile-export-card" id="m-btn-export-pdf">
+          <div class="mobile-export-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <div class="mobile-export-text">
+            <strong>Export & Download PDF</strong>
+            <span>Save edits, signatures, whiteouts & annotations</span>
+          </div>
+          <span class="mobile-export-badge">Export</span>
+        </button>
+
+        <div class="page-tools-grid">
+          <button class="page-tool-card" id="m-btn-insert-page">
+            <div class="page-tool-icon">➕</div>
+            <div class="page-tool-label">Insert Blank</div>
+          </button>
+          <button class="page-tool-card" id="m-btn-duplicate-page">
+            <div class="page-tool-icon">📑</div>
+            <div class="page-tool-label">Duplicate</div>
+          </button>
+          <button class="page-tool-card" id="m-btn-extract-page">
+            <div class="page-tool-icon">📤</div>
+            <div class="page-tool-label">Extract</div>
+          </button>
+          <button class="page-tool-card" id="m-btn-merge-pdf">
+            <div class="page-tool-icon">📂</div>
+            <div class="page-tool-label">Merge PDF</div>
+          </button>
+          <button class="page-tool-card" id="m-btn-rotate-page">
+            <div class="page-tool-icon">🔄</div>
+            <div class="page-tool-label">Rotate 90°</div>
+          </button>
+          <button class="page-tool-card danger" id="m-btn-delete-page">
+            <div class="page-tool-icon">🗑️</div>
+            <div class="page-tool-label">Delete Page</div>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="toast-container" id="toast-container"></div>
@@ -518,7 +593,7 @@
     import * as pdfjsLib from './libs/pdf.min.mjs';
     pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdf.worker.min.mjs';
     window.pdfjsLib = pdfjsLib;
-    import './app.js';
+    import './app.js?v=2.2';
   </script>
 </body>
 </html>

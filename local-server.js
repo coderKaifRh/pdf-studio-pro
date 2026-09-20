@@ -1,10 +1,29 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { exec } = require('child_process');
 
 const PORT = process.env.PORT || 3000;
 const BASE_DIR = __dirname;
+
+function getNetworkIp() {
+  const nets = os.networkInterfaces();
+  const candidates = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        // Exclude virtual / host-only networks like VirtualBox (192.168.56.x)
+        if (net.address.startsWith('192.168.56.')) continue;
+        if (/wi-fi|wlan|wireless/i.test(name)) {
+          return net.address; // Direct hit on Wi-Fi
+        }
+        candidates.push(net.address);
+      }
+    }
+  }
+  return candidates[0] || 'localhost';
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -45,14 +64,18 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  const url = `http://localhost:${PORT}/index.html`;
+server.listen(PORT, '0.0.0.0', () => {
+  const localUrl = `http://localhost:${PORT}/index.html`;
+  const networkIp = getNetworkIp();
+  const networkUrl = `http://${networkIp}:${PORT}/index.html`;
+
   console.log('='.repeat(60));
   console.log('  PDF Studio Pro is running!');
-  console.log(`  URL: ${url}`);
+  console.log(`  > Local:   ${localUrl}`);
+  console.log(`  > Network: ${networkUrl}  (Open this on your mobile phone)`);
   console.log('  Press Ctrl+C to stop the server.');
   console.log('='.repeat(60));
 
   // Open browser on Windows
-  exec(`start ${url}`);
+  exec(`start ${localUrl}`);
 });

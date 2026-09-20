@@ -39,7 +39,13 @@ const state = {
   selectedMergeFile: null,
   
   // Drag & Drop reordering state
-  draggedPageNum: null
+  draggedPageNum: null,
+
+  // Continuous multi-page scroll state
+  pageViewports: {},
+  activeDrawPage: 1,
+  activeDrawCanvas: null,
+  activeAnnotationLayer: null
 };
 
 // Undo / Redo History Stacks
@@ -145,17 +151,23 @@ const elements = {
   
   // Viewport
   viewportContainer: document.getElementById('viewport-container'),
+  pdfPagesContainer: document.getElementById('pdf-pages-container'),
   pdfPageWrapper: document.getElementById('pdf-page-wrapper'),
   pdfCanvas: document.getElementById('pdf-canvas'),
   textLayer: document.getElementById('text-layer'),
   textSelectionPill: document.getElementById('text-selection-pill'),
   drawingCanvas: document.getElementById('drawing-canvas'),
   annotationLayer: document.getElementById('annotation-layer'),
+  floatingPagePill: document.getElementById('floating-page-pill'),
+  pillPrevPage: document.getElementById('pill-prev-page'),
+  pillNextPage: document.getElementById('pill-next-page'),
+  pillPageText: document.getElementById('pill-page-text'),
   emptyState: document.getElementById('empty-state'),
   btnBrowseFile: document.getElementById('btn-browse-file'),
   btnLoadSampleHero: document.getElementById('btn-load-sample-hero'),
   loadingOverlay: document.getElementById('loading-overlay'),
   loadingText: document.getElementById('loading-text'),
+  btnMobilePageTools: document.getElementById('btn-mobile-page-tools'),
   
   // Modals
   modalInsertPage: document.getElementById('modal-insert-page'),
@@ -178,6 +190,17 @@ const elements = {
   btnCancelDelete: document.getElementById('btn-cancel-delete'),
   btnConfirmDelete: document.getElementById('btn-confirm-delete'),
   deletePageMessage: document.getElementById('delete-page-message'),
+
+  modalPageTools: document.getElementById('modal-page-tools'),
+  btnClosePageTools: document.getElementById('btn-close-page-tools'),
+  mBtnExportPdf: document.getElementById('m-btn-export-pdf'),
+  mBtnInsertPage: document.getElementById('m-btn-insert-page'),
+  mBtnDuplicatePage: document.getElementById('m-btn-duplicate-page'),
+  mBtnExtractPage: document.getElementById('m-btn-extract-page'),
+  mBtnMergePdf: document.getElementById('m-btn-merge-pdf'),
+  mBtnRotatePage: document.getElementById('m-btn-rotate-page'),
+  mBtnDeletePage: document.getElementById('m-btn-delete-page'),
+  sidebarExportPdf: document.getElementById('sidebar-export-pdf'),
   
   toastContainer: document.getElementById('toast-container')
 };
@@ -235,23 +258,34 @@ async function loadPDFFromBytes(bytes, name = 'document.pdf') {
     state.currentPage = 1;
     state.annotations = {};
     state.selectedAnnotationId = null;
+    state.pageViewports = {};
     historyStack.length = 0;
     redoStack.length = 0;
     updateHistoryButtons();
     markDirty(false);
     
+    // Auto-fit to width on mobile phones (<= 768px)
+    if (window.innerWidth <= 768 && state.numPages > 0) {
+      try {
+        const p1 = await state.pdfjsDoc.getPage(1);
+        const unscaledVp = p1.getViewport({ scale: 1.0 });
+        const availWidth = Math.max(280, (elements.viewportContainer ? elements.viewportContainer.clientWidth : window.innerWidth) - 20);
+        state.zoom = Math.max(0.35, Math.min(2.0, availWidth / unscaledVp.width));
+      } catch (_) {
+        state.zoom = 0.65;
+      }
+    } else {
+      state.zoom = 1.0;
+    }
+    
     elements.btnSaveFile.disabled = false;
     elements.emptyState.style.display = 'none';
-    elements.pdfPageWrapper.style.display = 'block';
+    if (elements.pdfPagesContainer) elements.pdfPagesContainer.style.display = 'flex';
+    if (elements.pdfPageWrapper) elements.pdfPageWrapper.style.display = 'none';
     
     updateHeaderAndNav();
-    await renderCurrentPage();
+    await renderAllPages();
     await renderThumbnails();
-    
-    // Auto-fit to width on mobile screens
-    if (window.innerWidth <= 768 && elements.btnZoomFit) {
-      setTimeout(() => elements.btnZoomFit.click(), 80);
-    }
     
     showToast(`Loaded ${name} (${state.numPages} pages)`, 'success');
   } catch (err) {
@@ -273,63 +307,116 @@ async function syncPdfDoc() {
 }
 
 // -------------------------------------------------------------
-// Canvas & Text Layer Rendering (Option A)
+// Continuous Multi-Page Canvas & Text Layer Rendering
 // -------------------------------------------------------------
-async function renderCurrentPage() {
-  if (!state.pdfjsDoc || state.currentPage < 1 || state.currentPage > state.numPages) return;
-  
-  try {
-    const page = await state.pdfjsDoc.getPage(state.currentPage);
-    
-    const actualScale = state.zoom * state.scaleFactor;
-    const viewport = page.getViewport({ scale: actualScale });
-    state.currentViewport = viewport;
-    
-    const displayWidth = viewport.width / state.scaleFactor;
-    const displayHeight = viewport.height / state.scaleFactor;
-    
-    const canvas = elements.pdfCanvas;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
-    
-    const drawCanvas = elements.drawingCanvas;
-    drawCanvas.width = viewport.width;
-    drawCanvas.height = viewport.height;
-    drawCanvas.style.width = `${displayWidth}px`;
-    drawCanvas.style.height = `${displayHeight}px`;
-    
-    elements.textLayer.style.width = `${displayWidth}px`;
-    elements.textLayer.style.height = `${displayHeight}px`;
-    elements.annotationLayer.style.width = `${displayWidth}px`;
-    elements.annotationLayer.style.height = `${displayHeight}px`;
-    elements.pdfPageWrapper.style.width = `${displayWidth}px`;
-    elements.pdfPageWrapper.style.height = `${displayHeight}px`;
+let scrollSpyObserver = null;
 
-    const ctx = canvas.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    
-    // Render PDF.js Text Layer for Smart Text Selection
-    await renderPdfTextLayer(page, viewport);
-    
-    renderAnnotations();
-    highlightActiveThumbnail();
-  } catch (err) {
-    console.error('Error rendering page:', err);
+async function renderAllPages() {
+  if (!state.pdfjsDoc || state.numPages < 1) return;
+  
+  const container = elements.pdfPagesContainer;
+  if (!container) return;
+  container.innerHTML = '';
+  container.style.display = 'flex';
+  state.pageViewports = {};
+  
+  const isDraw = (state.activeTool === 'draw');
+  const isErase = (state.activeTool === 'erase');
+  
+  for (let p = 1; p <= state.numPages; p++) {
+    try {
+      const page = await state.pdfjsDoc.getPage(p);
+      const actualScale = state.zoom * state.scaleFactor;
+      const viewport = page.getViewport({ scale: actualScale });
+      state.pageViewports[p] = viewport;
+      if (p === state.currentPage || !state.currentViewport) {
+        state.currentViewport = viewport;
+      }
+      
+      const displayWidth = viewport.width / state.scaleFactor;
+      const displayHeight = viewport.height / state.scaleFactor;
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = `pdf-page-wrapper ${p === state.currentPage ? 'active-page' : ''} ${isDraw || isErase ? 'touch-drawing' : ''}`;
+      wrapper.id = `pdf-page-wrapper-${p}`;
+      wrapper.dataset.pageNum = p;
+      wrapper.style.width = `${displayWidth}px`;
+      wrapper.style.height = `${displayHeight}px`;
+      
+      // Page number pill
+      const pill = document.createElement('div');
+      pill.className = 'page-num-pill tabular-nums';
+      pill.textContent = `Page ${p} of ${state.numPages}`;
+      wrapper.appendChild(pill);
+      
+      // Render canvas
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-canvas';
+      canvas.id = `pdf-canvas-${p}`;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+      wrapper.appendChild(canvas);
+      
+      // Text layer
+      const textLayer = document.createElement('div');
+      textLayer.className = 'text-layer';
+      textLayer.id = `text-layer-${p}`;
+      textLayer.style.width = `${displayWidth}px`;
+      textLayer.style.height = `${displayHeight}px`;
+      wrapper.appendChild(textLayer);
+      
+      // Drawing canvas
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.className = 'drawing-canvas';
+      drawCanvas.id = `drawing-canvas-${p}`;
+      drawCanvas.width = viewport.width;
+      drawCanvas.height = viewport.height;
+      drawCanvas.style.width = `${displayWidth}px`;
+      drawCanvas.style.height = `${displayHeight}px`;
+      wrapper.appendChild(drawCanvas);
+      
+      // Annotation layer
+      const annLayer = document.createElement('div');
+      annLayer.className = 'annotation-layer';
+      annLayer.id = `annotation-layer-${p}`;
+      annLayer.style.width = `${displayWidth}px`;
+      annLayer.style.height = `${displayHeight}px`;
+      wrapper.appendChild(annLayer);
+      
+      container.appendChild(wrapper);
+      
+      // Render PDF page to canvas
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      
+      // Render text layer
+      await renderPdfTextLayerForPage(page, viewport, textLayer, p);
+      
+      // Render annotations for this page
+      renderAnnotations(p);
+    } catch (err) {
+      console.error(`Error rendering page ${p}:`, err);
+    }
   }
+  
+  setupScrollSpy();
+  updateHeaderAndNav();
+  highlightActiveThumbnail();
 }
 
-// Option A: Smart Text Layer Generation
-async function renderPdfTextLayer(page, viewport) {
-  const container = elements.textLayer;
+// Backward-compatible alias for single-page calls
+async function renderCurrentPage() {
+  await renderAllPages();
+}
+
+async function renderPdfTextLayerForPage(page, viewport, container, pageNum) {
   container.innerHTML = '';
-  
   try {
     const textContent = await page.getTextContent();
     if (textContent.items.length === 0) return;
     
-    // Create text items scaled for display
     textContent.items.forEach(item => {
       const tx = window.pdfjsLib.Util.transform(viewport.transform, item.transform);
       const fontHeight = Math.hypot(tx[2], tx[3]);
@@ -345,7 +432,73 @@ async function renderPdfTextLayer(page, viewport) {
       container.appendChild(span);
     });
   } catch (err) {
-    console.warn('Text layer render notice:', err);
+    console.warn(`Text layer notice for page ${pageNum}:`, err);
+  }
+}
+
+// Scroll Spy: dynamically tracks the currently visible page while scrolling
+function setupScrollSpy() {
+  if (scrollSpyObserver) {
+    scrollSpyObserver.disconnect();
+  }
+  
+  if (!elements.viewportContainer) return;
+  
+  const options = {
+    root: elements.viewportContainer,
+    rootMargin: '-20% 0px -20% 0px',
+    threshold: [0.1, 0.4, 0.8]
+  };
+  
+  scrollSpyObserver = new IntersectionObserver((entries) => {
+    let bestEntry = null;
+    let maxRatio = 0;
+    
+    entries.forEach(entry => {
+      if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+        maxRatio = entry.intersectionRatio;
+        bestEntry = entry;
+      }
+    });
+    
+    if (bestEntry && bestEntry.target) {
+      const pageNum = parseInt(bestEntry.target.dataset.pageNum, 10);
+      if (pageNum && pageNum !== state.currentPage) {
+        state.currentPage = pageNum;
+        if (state.pageViewports[pageNum]) {
+          state.currentViewport = state.pageViewports[pageNum];
+        }
+        updateHeaderAndNav();
+        highlightActiveThumbnail();
+        updateActivePageClass();
+      }
+    }
+  }, options);
+  
+  const wrappers = elements.viewportContainer.querySelectorAll('.pdf-page-wrapper');
+  wrappers.forEach(w => scrollSpyObserver.observe(w));
+}
+
+function updateActivePageClass() {
+  if (!elements.viewportContainer) return;
+  const wrappers = elements.viewportContainer.querySelectorAll('.pdf-page-wrapper');
+  wrappers.forEach(w => {
+    const p = parseInt(w.dataset.pageNum, 10);
+    w.classList.toggle('active-page', p === state.currentPage);
+  });
+}
+
+function updateFloatingPagePill() {
+  if (!elements.floatingPagePill) return;
+  if (state.numPages > 1) {
+    elements.floatingPagePill.style.display = 'inline-flex';
+    if (elements.pillPageText) {
+      elements.pillPageText.textContent = `${state.currentPage} / ${state.numPages}`;
+    }
+    if (elements.pillPrevPage) elements.pillPrevPage.disabled = state.currentPage <= 1;
+    if (elements.pillNextPage) elements.pillNextPage.disabled = state.currentPage >= state.numPages;
+  } else {
+    elements.floatingPagePill.style.display = 'none';
   }
 }
 
@@ -356,17 +509,28 @@ function handleTextSelectionChange(e) {
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
   
-  if (selectedText && elements.textLayer && elements.textLayer.contains(selection.anchorNode)) {
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+  if (selectedText && selection.anchorNode) {
+    const parent = selection.anchorNode.nodeType === 3 ? selection.anchorNode.parentElement : selection.anchorNode;
+    const textLayer = parent ? parent.closest('.text-layer') : null;
     
-    if (rect.width > 0 && rect.height > 0) {
-      elements.textSelectionPill.style.display = 'flex';
-      const left = Math.max(10, Math.min(window.innerWidth - 180, rect.left + (rect.width / 2) - 80));
-      const top = Math.max(50, rect.top - 44);
-      elements.textSelectionPill.style.left = `${left}px`;
-      elements.textSelectionPill.style.top = `${top}px`;
-      return;
+    if (textLayer) {
+      const pageWrapper = textLayer.closest('.pdf-page-wrapper');
+      if (pageWrapper) {
+        state.currentPage = parseInt(pageWrapper.dataset.pageNum, 10);
+        state.currentViewport = state.pageViewports[state.currentPage];
+      }
+      
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      
+      if (rect.width > 0 && rect.height > 0) {
+        elements.textSelectionPill.style.display = 'flex';
+        const left = Math.max(10, Math.min(window.innerWidth - 180, rect.left + (rect.width / 2) - 80));
+        const top = Math.max(50, rect.top - 44);
+        elements.textSelectionPill.style.left = `${left}px`;
+        elements.textSelectionPill.style.top = `${top}px`;
+        return;
+      }
     }
   }
   
@@ -375,7 +539,6 @@ function handleTextSelectionChange(e) {
 
 document.addEventListener('mouseup', handleTextSelectionChange);
 document.addEventListener('touchend', (e) => {
-  // Brief timeout to let mobile selection finalize
   setTimeout(() => handleTextSelectionChange(e), 60);
 });
 
@@ -386,8 +549,11 @@ elements.textSelectionPill.addEventListener('click', () => {
   
   const range = selection.getRangeAt(0);
   const clientRects = Array.from(range.getClientRects());
-  const pageBounds = elements.annotationLayer.getBoundingClientRect();
+  const pageWrapper = document.getElementById(`pdf-page-wrapper-${state.currentPage}`);
+  const annLayer = pageWrapper ? pageWrapper.querySelector('.annotation-layer') : elements.annotationLayer;
+  if (!annLayer) return;
   
+  const pageBounds = annLayer.getBoundingClientRect();
   const createdWhiteouts = [];
   
   clientRects.forEach(rect => {
@@ -426,17 +592,17 @@ elements.textSelectionPill.addEventListener('click', () => {
           const idx = anns.findIndex(a => a.id === cw.id);
           if (idx !== -1) anns.splice(idx, 1);
         });
-        renderAnnotations();
+        renderAnnotations(pageNum);
       },
       redo: () => {
         getPageAnnotations(pageNum).push(...createdWhiteouts);
-        renderAnnotations();
+        renderAnnotations(pageNum);
       }
     });
     
     selection.removeAllRanges();
     elements.textSelectionPill.style.display = 'none';
-    renderAnnotations();
+    renderAnnotations(pageNum);
     showToast('Selected text erased with clean whiteout!', 'success');
   }
 });
@@ -451,147 +617,154 @@ function getPageAnnotations(pageNum) {
   return state.annotations[pageNum];
 }
 
-function renderAnnotations() {
-  const container = elements.annotationLayer;
-  container.innerHTML = '';
-  if (!state.currentViewport) return;
+function renderAnnotations(targetPageNum = null) {
+  const pagesToRender = targetPageNum ? [targetPageNum] : Array.from({ length: state.numPages }, (_, i) => i + 1);
   
-  const viewport = state.currentViewport;
-  const pageAnns = getPageAnnotations(state.currentPage);
-  
-  pageAnns.forEach(ann => {
-    const el = document.createElement('div');
-    el.className = `annotation-element annotation-${ann.type}`;
-    el.dataset.id = ann.id;
+  pagesToRender.forEach(pageNum => {
+    const container = document.getElementById(`annotation-layer-${pageNum}`) || elements.annotationLayer;
+    const viewport = state.pageViewports[pageNum] || state.currentViewport;
+    if (!container || !viewport) return;
     
-    if (state.selectedAnnotationId === ann.id) {
-      el.classList.add('selected');
-    }
+    container.innerHTML = '';
+    const pageAnns = getPageAnnotations(pageNum);
     
-    // 1. Whiteout / Erase box
-    if (ann.type === 'whiteout') {
-      const [vX1, vY1] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY + ann.pdfHeight);
-      const [vX2, vY2] = viewport.convertToViewportPoint(ann.pdfX + ann.pdfWidth, ann.pdfY);
-      
-      const left = Math.min(vX1, vX2) / state.scaleFactor;
-      const top = Math.min(vY1, vY2) / state.scaleFactor;
-      const width = Math.abs(vX2 - vX1) / state.scaleFactor;
-      const height = Math.abs(vY2 - vY1) / state.scaleFactor;
-      
-      el.style.left = `${left}px`;
-      el.style.top = `${top}px`;
-      el.style.width = `${width}px`;
-      el.style.height = `${height}px`;
-      el.style.backgroundColor = ann.color || '#ffffff';
+    pageAnns.forEach(ann => {
+      const el = document.createElement('div');
+      el.className = `annotation-element annotation-${ann.type}`;
+      el.dataset.id = ann.id;
+      el.dataset.pageNum = pageNum;
       
       if (state.selectedAnnotationId === ann.id) {
-        addResizeHandle(el, ann, 'se');
+        el.classList.add('selected');
       }
-    } 
-    // 2. Text Box
-    else if (ann.type === 'text') {
-      const [vX, vY] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY);
-      el.style.left = `${vX / state.scaleFactor}px`;
-      el.style.top = `${vY / state.scaleFactor}px`;
-      el.style.fontSize = `${ann.fontSize * state.zoom}px`;
-      el.style.color = ann.color;
-      el.style.fontFamily = getFontFamilyCss(ann.fontFamily);
-      el.style.fontWeight = ann.bold ? 'bold' : 'normal';
-      el.textContent = ann.text;
-      el.contentEditable = (state.activeTool === 'select');
       
-      el.addEventListener('input', () => {
-        ann.text = el.innerText;
-        markDirty(true);
-      });
-    }
-    // 3. Image Stamp (Option C)
-    else if (ann.type === 'image') {
-      const [vX1, vY1] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY + ann.pdfHeight);
-      const [vX2, vY2] = viewport.convertToViewportPoint(ann.pdfX + ann.pdfWidth, ann.pdfY);
+      // 1. Whiteout / Erase box
+      if (ann.type === 'whiteout') {
+        const [vX1, vY1] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY + ann.pdfHeight);
+        const [vX2, vY2] = viewport.convertToViewportPoint(ann.pdfX + ann.pdfWidth, ann.pdfY);
+        
+        const left = Math.min(vX1, vX2) / state.scaleFactor;
+        const top = Math.min(vY1, vY2) / state.scaleFactor;
+        const width = Math.abs(vX2 - vX1) / state.scaleFactor;
+        const height = Math.abs(vY2 - vY1) / state.scaleFactor;
+        
+        el.style.left = `${left}px`;
+        el.style.top = `${top}px`;
+        el.style.width = `${width}px`;
+        el.style.height = `${height}px`;
+        el.style.backgroundColor = ann.color || '#ffffff';
+        
+        if (state.selectedAnnotationId === ann.id) {
+          addResizeHandle(el, ann, 'se', pageNum);
+        }
+      } 
+      // 2. Text Box
+      else if (ann.type === 'text') {
+        const [vX, vY] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY);
+        el.style.left = `${vX / state.scaleFactor}px`;
+        el.style.top = `${vY / state.scaleFactor}px`;
+        el.style.fontSize = `${ann.fontSize * state.zoom}px`;
+        el.style.color = ann.color;
+        el.style.fontFamily = getFontFamilyCss(ann.fontFamily);
+        el.style.fontWeight = ann.bold ? 'bold' : 'normal';
+        el.textContent = ann.text;
+        el.contentEditable = (state.activeTool === 'select');
+        
+        el.addEventListener('input', () => {
+          ann.text = el.innerText;
+          markDirty(true);
+        });
+      }
+      // 3. Image Stamp (Option C)
+      else if (ann.type === 'image') {
+        const [vX1, vY1] = viewport.convertToViewportPoint(ann.pdfX, ann.pdfY + ann.pdfHeight);
+        const [vX2, vY2] = viewport.convertToViewportPoint(ann.pdfX + ann.pdfWidth, ann.pdfY);
+        
+        const left = Math.min(vX1, vX2) / state.scaleFactor;
+        const top = Math.min(vY1, vY2) / state.scaleFactor;
+        const width = Math.abs(vX2 - vX1) / state.scaleFactor;
+        const height = Math.abs(vY2 - vY1) / state.scaleFactor;
+        
+        el.style.left = `${left}px`;
+        el.style.top = `${top}px`;
+        el.style.width = `${width}px`;
+        el.style.height = `${height}px`;
+        el.style.backgroundImage = `url(${ann.dataUrl})`;
+        
+        if (state.selectedAnnotationId === ann.id) {
+          addResizeHandle(el, ann, 'se', pageNum);
+          addResizeHandle(el, ann, 'nw', pageNum);
+        }
+      }
+      // 4. Freehand Signature / Drawing (Option C)
+      else if (ann.type === 'drawing') {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'annotation-drawing');
+        svg.style.position = 'absolute';
+        svg.style.left = '0';
+        svg.style.top = '0';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.pointerEvents = 'none';
+        
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        
+        let d = '';
+        ann.strokePoints.forEach((pt, i) => {
+          const [vx, vy] = viewport.convertToViewportPoint(pt.pdfX, pt.pdfY);
+          const sx = vx / state.scaleFactor;
+          const sy = vy / state.scaleFactor;
+          d += (i === 0 ? `M ${sx} ${sy}` : ` L ${sx} ${sy}`);
+        });
+        
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', ann.color || '#0f172a');
+        path.setAttribute('stroke-width', (ann.strokeWidth || 2) * state.zoom);
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        
+        svg.appendChild(path);
+        container.appendChild(svg);
+        return;
+      }
       
-      const left = Math.min(vX1, vX2) / state.scaleFactor;
-      const top = Math.min(vY1, vY2) / state.scaleFactor;
-      const width = Math.abs(vX2 - vX1) / state.scaleFactor;
-      const height = Math.abs(vY2 - vY1) / state.scaleFactor;
-      
-      el.style.left = `${left}px`;
-      el.style.top = `${top}px`;
-      el.style.width = `${width}px`;
-      el.style.height = `${height}px`;
-      el.style.backgroundImage = `url(${ann.dataUrl})`;
-      
+      // Badge Delete Button
       if (state.selectedAnnotationId === ann.id) {
-        addResizeHandle(el, ann, 'se');
-        addResizeHandle(el, ann, 'nw');
+        const badge = document.createElement('div');
+        badge.className = 'element-badge-controls';
+        badge.innerHTML = `
+          <button class="element-badge-btn delete" title="Delete (Del)">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+            </svg>
+          </button>
+        `;
+        badge.querySelector('.delete').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteAnnotation(ann.id, pageNum);
+        });
+        el.appendChild(badge);
       }
-    }
-    // 4. Freehand Signature / Drawing (Option C)
-    else if (ann.type === 'drawing') {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'annotation-drawing');
-      svg.style.position = 'absolute';
-      svg.style.left = '0';
-      svg.style.top = '0';
-      svg.style.width = '100%';
-      svg.style.height = '100%';
-      svg.style.pointerEvents = 'none';
       
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      setupDragAnnotation(el, ann, pageNum);
       
-      let d = '';
-      ann.strokePoints.forEach((pt, i) => {
-        const [vx, vy] = viewport.convertToViewportPoint(pt.pdfX, pt.pdfY);
-        const sx = vx / state.scaleFactor;
-        const sy = vy / state.scaleFactor;
-        d += (i === 0 ? `M ${sx} ${sy}` : ` L ${sx} ${sy}`);
-      });
-      
-      path.setAttribute('d', d);
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', ann.color || '#0f172a');
-      path.setAttribute('stroke-width', (ann.strokeWidth || 2) * state.zoom);
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('stroke-linejoin', 'round');
-      
-      svg.appendChild(path);
-      container.appendChild(svg);
-      return; // SVG handled
-    }
-    
-    // Badge Delete Button
-    if (state.selectedAnnotationId === ann.id) {
-      const badge = document.createElement('div');
-      badge.className = 'element-badge-controls';
-      badge.innerHTML = `
-        <button class="element-badge-btn delete" title="Delete (Del)">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-          </svg>
-        </button>
-      `;
-      badge.querySelector('.delete').addEventListener('click', (e) => {
+      el.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
-        deleteAnnotation(ann.id);
+        state.currentPage = pageNum;
+        selectAnnotation(ann.id, pageNum);
       });
-      el.appendChild(badge);
-    }
-    
-    setupDragAnnotation(el, ann);
-    
-    el.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      selectAnnotation(ann.id);
+      
+      container.appendChild(el);
     });
-    
-    container.appendChild(el);
   });
 }
 
-function selectAnnotation(id) {
+function selectAnnotation(id, pageNum = null) {
   state.selectedAnnotationId = id;
-  const ann = getPageAnnotations(state.currentPage).find(a => a.id === id);
+  const pNum = pageNum || state.currentPage;
+  const ann = getPageAnnotations(pNum).find(a => a.id === id);
   if (ann && ann.type === 'text') {
     elements.fontSizeInput.value = ann.fontSize;
     elements.fontFamilyInput.value = ann.fontFamily;
@@ -601,7 +774,7 @@ function selectAnnotation(id) {
   } else if (ann && ann.type === 'whiteout') {
     elements.eraseColorInput.value = ann.color;
   }
-  renderAnnotations();
+  renderAnnotations(pNum);
 }
 
 function deselectAllAnnotations() {
@@ -611,12 +784,12 @@ function deselectAllAnnotations() {
   }
 }
 
-function deleteAnnotation(id) {
-  const pageAnns = getPageAnnotations(state.currentPage);
+function deleteAnnotation(id, pageNum = null) {
+  const pNum = pageNum || state.currentPage;
+  const pageAnns = getPageAnnotations(pNum);
   const index = pageAnns.findIndex(a => a.id === id);
   if (index !== -1) {
     const deletedAnn = pageAnns[index];
-    const pageNum = state.currentPage;
     
     pageAnns.splice(index, 1);
     state.selectedAnnotationId = null;
@@ -624,18 +797,18 @@ function deleteAnnotation(id) {
     pushHistory({
       type: 'DELETE_ANNOTATION',
       undo: () => {
-        getPageAnnotations(pageNum).splice(index, 0, deletedAnn);
-        renderAnnotations();
+        getPageAnnotations(pNum).splice(index, 0, deletedAnn);
+        renderAnnotations(pNum);
       },
       redo: () => {
-        const anns = getPageAnnotations(pageNum);
+        const anns = getPageAnnotations(pNum);
         const idx = anns.findIndex(a => a.id === deletedAnn.id);
         if (idx !== -1) anns.splice(idx, 1);
-        renderAnnotations();
+        renderAnnotations(pNum);
       }
     });
     
-    renderAnnotations();
+    renderAnnotations(pNum);
     showToast('Element deleted', 'info', 1200);
   }
 }
@@ -649,7 +822,8 @@ function getFontFamilyCss(family) {
   }
 }
 
-function addResizeHandle(el, ann, position) {
+function addResizeHandle(el, ann, position, pageNum = null) {
+  const pNum = pageNum || state.currentPage;
   const handle = document.createElement('div');
   handle.className = `resize-handle handle-${position}`;
   
@@ -668,7 +842,7 @@ function addResizeHandle(el, ann, position) {
       ann.pdfWidth = Math.max(8, initW + dx);
       ann.pdfHeight = Math.max(8, initH + dy);
       markDirty(true);
-      renderAnnotations();
+      renderAnnotations(pNum);
     }
     
     function onPointerUp(upEvt) {
@@ -687,7 +861,8 @@ function addResizeHandle(el, ann, position) {
 }
 
 // Drag Annotation with PDF Coordinate Mapping (Mouse & Touch)
-function setupDragAnnotation(el, ann) {
+function setupDragAnnotation(el, ann, pageNum = null) {
+  const pNum = pageNum || state.currentPage;
   el.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.element-badge-controls') || e.target.classList.contains('resize-handle')) return;
     if (el.contentEditable === 'true' && document.activeElement === el) return;
@@ -696,13 +871,15 @@ function setupDragAnnotation(el, ann) {
     const startScreenY = e.clientY;
     const initialPdfX = ann.pdfX;
     const initialPdfY = ann.pdfY;
+    const viewport = state.pageViewports[pNum] || state.currentViewport;
+    if (!viewport) return;
     
     function onPointerMove(moveEvt) {
       const dxScreen = (moveEvt.clientX - startScreenX) * state.scaleFactor;
       const dyScreen = (moveEvt.clientY - startScreenY) * state.scaleFactor;
       
-      const [initCanvasX, initCanvasY] = state.currentViewport.convertToViewportPoint(initialPdfX, initialPdfY);
-      const [curPdfX, curPdfY] = state.currentViewport.convertToPdfPoint(
+      const [initCanvasX, initCanvasY] = viewport.convertToViewportPoint(initialPdfX, initialPdfY);
+      const [curPdfX, curPdfY] = viewport.convertToPdfPoint(
         initCanvasX + dxScreen,
         initCanvasY + dyScreen
       );
@@ -710,10 +887,10 @@ function setupDragAnnotation(el, ann) {
       ann.pdfX = curPdfX;
       ann.pdfY = curPdfY;
       markDirty(true);
-      renderAnnotations();
+      renderAnnotations(pNum);
     }
     
-    function onPointerUp(upEvt) {
+    function onPointerUp() {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     }
@@ -727,16 +904,25 @@ function setupDragAnnotation(el, ann) {
 // Interactive Drawing & Canvas Actions (Option C: Freehand Pen - Touch & Mouse)
 // -------------------------------------------------------------
 elements.viewportContainer.addEventListener('pointerdown', (e) => {
-  if (!e.target.closest('#annotation-layer') && !e.target.closest('.annotation-element')) {
+  if (!e.target.closest('.annotation-layer') && !e.target.closest('.annotation-element')) {
     deselectAllAnnotations();
   }
-});
-
-elements.annotationLayer.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.annotation-element')) return;
-  if (!state.currentViewport) return;
   
-  const rect = elements.annotationLayer.getBoundingClientRect();
+  const pageWrapper = e.target.closest('.pdf-page-wrapper');
+  if (!pageWrapper) return;
+  
+  const pageNum = parseInt(pageWrapper.dataset.pageNum, 10);
+  if (!pageNum || !state.pageViewports[pageNum]) return;
+  
+  state.currentPage = pageNum;
+  state.currentViewport = state.pageViewports[pageNum];
+  state.activeDrawPage = pageNum;
+  state.activeDrawCanvas = pageWrapper.querySelector('.drawing-canvas');
+  state.activeAnnotationLayer = pageWrapper.querySelector('.annotation-layer');
+  
+  if (e.target.closest('.annotation-element')) return;
+  
+  const rect = state.activeAnnotationLayer.getBoundingClientRect();
   const canvasX = (e.clientX - rect.left) * state.scaleFactor;
   const canvasY = (e.clientY - rect.top) * state.scaleFactor;
   
@@ -756,7 +942,6 @@ elements.annotationLayer.addEventListener('pointerdown', (e) => {
       bold: isBoldActive
     };
     
-    const pageNum = state.currentPage;
     getPageAnnotations(pageNum).push(newTextAnn);
     
     pushHistory({
@@ -765,19 +950,19 @@ elements.annotationLayer.addEventListener('pointerdown', (e) => {
         const anns = getPageAnnotations(pageNum);
         const idx = anns.findIndex(a => a.id === newTextAnn.id);
         if (idx !== -1) anns.splice(idx, 1);
-        renderAnnotations();
+        renderAnnotations(pageNum);
       },
       redo: () => {
         getPageAnnotations(pageNum).push(newTextAnn);
-        renderAnnotations();
+        renderAnnotations(pageNum);
       }
     });
     
-    selectAnnotation(newTextAnn.id);
+    selectAnnotation(newTextAnn.id, pageNum);
     setTool('select');
     
     setTimeout(() => {
-      const createdEl = elements.annotationLayer.querySelector(`[data-id="${newTextAnn.id}"]`);
+      const createdEl = state.activeAnnotationLayer ? state.activeAnnotationLayer.querySelector(`[data-id="${newTextAnn.id}"]`) : null;
       if (createdEl) {
         createdEl.focus();
         document.execCommand('selectAll', false, null);
@@ -793,20 +978,22 @@ elements.annotationLayer.addEventListener('pointerdown', (e) => {
       try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
     }
   }
-  // 3. Freehand Draw / Signature (Option C)
+  // 3. Freehand Draw / Signature
   else if (state.activeTool === 'draw') {
     state.isDrawing = true;
     state.currentStrokePoints = [];
     const [pdfX, pdfY] = state.currentViewport.convertToPdfPoint(canvasX, canvasY);
     state.currentStrokePoints.push({ pdfX, pdfY });
     
-    const ctx = elements.drawingCanvas.getContext('2d');
-    ctx.strokeStyle = elements.penColorInput.value || '#0f172a';
-    ctx.lineWidth = parseFloat(elements.penWidthSelect.value || 3) * state.scaleFactor;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(canvasX, canvasY);
+    if (state.activeDrawCanvas) {
+      const ctx = state.activeDrawCanvas.getContext('2d');
+      ctx.strokeStyle = elements.penColorInput.value || '#0f172a';
+      ctx.lineWidth = parseFloat(elements.penWidthSelect.value || 3) * state.scaleFactor;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(canvasX, canvasY);
+    }
     if (e.target.setPointerCapture) {
       try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
     }
@@ -814,16 +1001,16 @@ elements.annotationLayer.addEventListener('pointerdown', (e) => {
 });
 
 window.addEventListener('pointermove', (e) => {
-  if (!state.isDrawing) return;
+  if (!state.isDrawing || !state.activeAnnotationLayer || !state.activeDrawCanvas) return;
   
-  const rect = elements.annotationLayer.getBoundingClientRect();
+  const rect = state.activeAnnotationLayer.getBoundingClientRect();
   const currentCanvasX = (e.clientX - rect.left) * state.scaleFactor;
   const currentCanvasY = (e.clientY - rect.top) * state.scaleFactor;
   
-  const ctx = elements.drawingCanvas.getContext('2d');
+  const ctx = state.activeDrawCanvas.getContext('2d');
   
   if (state.activeTool === 'erase') {
-    ctx.clearRect(0, 0, elements.drawingCanvas.width, elements.drawingCanvas.height);
+    ctx.clearRect(0, 0, state.activeDrawCanvas.width, state.activeDrawCanvas.height);
     const x = Math.min(state.drawStartCanvasX, currentCanvasX);
     const y = Math.min(state.drawStartCanvasY, currentCanvasY);
     const w = Math.abs(currentCanvasX - state.drawStartCanvasX);
@@ -836,8 +1023,11 @@ window.addEventListener('pointermove', (e) => {
     ctx.setLineDash([3 * state.scaleFactor, 3 * state.scaleFactor]);
     ctx.strokeRect(x, y, w, h);
   } else if (state.activeTool === 'draw') {
-    const [pdfX, pdfY] = state.currentViewport.convertToPdfPoint(currentCanvasX, currentCanvasY);
-    state.currentStrokePoints.push({ pdfX, pdfY });
+    const viewport = state.pageViewports[state.activeDrawPage] || state.currentViewport;
+    if (viewport) {
+      const [pdfX, pdfY] = viewport.convertToPdfPoint(currentCanvasX, currentCanvasY);
+      state.currentStrokePoints.push({ pdfX, pdfY });
+    }
     ctx.lineTo(currentCanvasX, currentCanvasY);
     ctx.stroke();
   }
@@ -847,12 +1037,17 @@ window.addEventListener('pointerup', (e) => {
   if (!state.isDrawing) return;
   state.isDrawing = false;
   
-  const ctx = elements.drawingCanvas.getContext('2d');
-  ctx.clearRect(0, 0, elements.drawingCanvas.width, elements.drawingCanvas.height);
+  if (state.activeDrawCanvas) {
+    const ctx = state.activeDrawCanvas.getContext('2d');
+    ctx.clearRect(0, 0, state.activeDrawCanvas.width, state.activeDrawCanvas.height);
+  }
+  
+  const pageNum = state.activeDrawPage || state.currentPage;
+  const viewport = state.pageViewports[pageNum] || state.currentViewport;
   
   // Finish Whiteout
-  if (state.activeTool === 'erase') {
-    const rect = elements.annotationLayer.getBoundingClientRect();
+  if (state.activeTool === 'erase' && state.activeAnnotationLayer && viewport) {
+    const rect = state.activeAnnotationLayer.getBoundingClientRect();
     const endCanvasX = (e.clientX - rect.left) * state.scaleFactor;
     const endCanvasY = (e.clientY - rect.top) * state.scaleFactor;
     
@@ -864,9 +1059,9 @@ window.addEventListener('pointerup', (e) => {
     const w = maxCanvasX - minCanvasX;
     const h = maxCanvasY - minCanvasY;
     
-    if (w >= 4 && h >= 4 && state.currentViewport) {
-      const [pdfX1, pdfY1] = state.currentViewport.convertToPdfPoint(minCanvasX, minCanvasY);
-      const [pdfX2, pdfY2] = state.currentViewport.convertToPdfPoint(maxCanvasX, maxCanvasY);
+    if (w >= 4 && h >= 4) {
+      const [pdfX1, pdfY1] = viewport.convertToPdfPoint(minCanvasX, minCanvasY);
+      const [pdfX2, pdfY2] = viewport.convertToPdfPoint(maxCanvasX, maxCanvasY);
       
       const whiteoutAnn = {
         id: 'whiteout_' + Date.now(),
@@ -878,7 +1073,6 @@ window.addEventListener('pointerup', (e) => {
         color: elements.eraseColorInput.value || '#ffffff'
       };
       
-      const pageNum = state.currentPage;
       getPageAnnotations(pageNum).push(whiteoutAnn);
       
       pushHistory({
@@ -887,15 +1081,15 @@ window.addEventListener('pointerup', (e) => {
           const anns = getPageAnnotations(pageNum);
           const idx = anns.findIndex(a => a.id === whiteoutAnn.id);
           if (idx !== -1) anns.splice(idx, 1);
-          renderAnnotations();
+          renderAnnotations(pageNum);
         },
         redo: () => {
           getPageAnnotations(pageNum).push(whiteoutAnn);
-          renderAnnotations();
+          renderAnnotations(pageNum);
         }
       });
       
-      selectAnnotation(whiteoutAnn.id);
+      selectAnnotation(whiteoutAnn.id, pageNum);
       showToast('Text erased / whiteouted', 'success', 1200);
     }
   } 
@@ -909,7 +1103,6 @@ window.addEventListener('pointerup', (e) => {
       strokeWidth: parseFloat(elements.penWidthSelect.value || 3)
     };
     
-    const pageNum = state.currentPage;
     getPageAnnotations(pageNum).push(drawAnn);
     
     pushHistory({
@@ -918,15 +1111,15 @@ window.addEventListener('pointerup', (e) => {
         const anns = getPageAnnotations(pageNum);
         const idx = anns.findIndex(a => a.id === drawAnn.id);
         if (idx !== -1) anns.splice(idx, 1);
-        renderAnnotations();
+        renderAnnotations(pageNum);
       },
       redo: () => {
         getPageAnnotations(pageNum).push(drawAnn);
-        renderAnnotations();
+        renderAnnotations(pageNum);
       }
     });
     
-    renderAnnotations();
+    renderAnnotations(pageNum);
     showToast('Signature / drawing saved', 'success', 1200);
   }
 });
@@ -1208,12 +1401,24 @@ function highlightActiveThumbnail() {
 // -------------------------------------------------------------
 // Navigation & Zoom
 // -------------------------------------------------------------
-function goToPage(pageNum) {
-  if (pageNum < 1 || pageNum > state.numPages || pageNum === state.currentPage) return;
+function goToPage(pageNum, smooth = true) {
+  if (pageNum < 1 || pageNum > state.numPages) return;
   state.currentPage = pageNum;
   state.selectedAnnotationId = null;
+  if (state.pageViewports[pageNum]) {
+    state.currentViewport = state.pageViewports[pageNum];
+  }
   updateHeaderAndNav();
-  renderCurrentPage();
+  highlightActiveThumbnail();
+  updateActivePageClass();
+
+  const target = document.getElementById(`pdf-page-wrapper-${pageNum}`);
+  if (target) {
+    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  }
+  if (window.innerWidth <= 768) {
+    closeMobileSidebar();
+  }
 }
 
 function updateHeaderAndNav() {
@@ -1222,16 +1427,24 @@ function updateHeaderAndNav() {
   elements.btnNextPage.disabled = state.currentPage >= state.numPages;
   elements.btnDeletePage.disabled = state.numPages <= 1;
   elements.zoomDisplay.textContent = `${Math.round(state.zoom * 100)}%`;
+  updateFloatingPagePill();
 }
 
 elements.btnPrevPage.addEventListener('click', () => goToPage(state.currentPage - 1));
 elements.btnNextPage.addEventListener('click', () => goToPage(state.currentPage + 1));
 
+if (elements.pillPrevPage) {
+  elements.pillPrevPage.addEventListener('click', () => goToPage(state.currentPage - 1));
+}
+if (elements.pillNextPage) {
+  elements.pillNextPage.addEventListener('click', () => goToPage(state.currentPage + 1));
+}
+
 elements.btnZoomIn.addEventListener('click', () => {
   if (state.zoom < 2.5) {
     state.zoom = Math.min(2.5, state.zoom + 0.15);
     updateHeaderAndNav();
-    renderCurrentPage();
+    renderAllPages();
   }
 });
 
@@ -1239,14 +1452,14 @@ elements.btnZoomOut.addEventListener('click', () => {
   if (state.zoom > 0.4) {
     state.zoom = Math.max(0.4, state.zoom - 0.15);
     updateHeaderAndNav();
-    renderCurrentPage();
+    renderAllPages();
   }
 });
 
 elements.zoomDisplay.addEventListener('click', () => {
   state.zoom = 1.0;
   updateHeaderAndNav();
-  renderCurrentPage();
+  renderAllPages();
   showToast('Reset zoom to 100%', 'info', 1000);
 });
 
@@ -1257,7 +1470,7 @@ elements.btnZoomFit.addEventListener('click', () => {
     const naturalWidth = state.currentViewport.width / (state.zoom * state.scaleFactor);
     state.zoom = Math.max(0.3, Math.min(2.5, containerWidth / naturalWidth));
     updateHeaderAndNav();
-    renderCurrentPage();
+    renderAllPages();
   }
 });
 
@@ -1277,9 +1490,10 @@ function setTool(toolName) {
   const isDraw = (toolName === 'draw');
   const isSelect = (toolName === 'select');
   
-  if (elements.pdfPageWrapper) {
-    elements.pdfPageWrapper.classList.toggle('touch-drawing', isDraw || isErase);
-  }
+  const wrappers = document.querySelectorAll('.pdf-page-wrapper');
+  wrappers.forEach(w => {
+    w.classList.toggle('touch-drawing', isDraw || isErase);
+  });
   
   elements.optTextSize.style.display = isText ? 'flex' : 'none';
   elements.optTextFont.style.display = isText ? 'flex' : 'none';
@@ -1289,15 +1503,16 @@ function setTool(toolName) {
   elements.optDrawSettings.style.display = isDraw ? 'flex' : 'none';
   elements.optSelectInfo.style.display = isSelect ? 'flex' : 'none';
   
-  if (isText || isErase) {
-    elements.annotationLayer.style.cursor = 'crosshair';
-  } else if (isDraw) {
-    elements.annotationLayer.style.cursor = 'crosshair';
-  } else {
-    elements.annotationLayer.style.cursor = 'default';
-  }
+  const annLayers = document.querySelectorAll('.annotation-layer');
+  annLayers.forEach(layer => {
+    if (isText || isErase || isDraw) {
+      layer.style.cursor = 'crosshair';
+    } else {
+      layer.style.cursor = 'default';
+    }
+  });
   
-  const textEls = elements.annotationLayer.querySelectorAll('.annotation-text');
+  const textEls = document.querySelectorAll('.annotation-text');
   textEls.forEach(el => {
     el.contentEditable = isSelect;
   });
@@ -1787,10 +2002,95 @@ if (elements.sidebarBackdrop) {
 }
 
 // -------------------------------------------------------------
+// Mobile Page Tools Bottom Sheet
+// -------------------------------------------------------------
+function openMobilePageTools() {
+  if (elements.modalPageTools) elements.modalPageTools.classList.add('show');
+}
+
+function closeMobilePageTools() {
+  if (elements.modalPageTools) elements.modalPageTools.classList.remove('show');
+}
+
+if (elements.btnMobilePageTools) {
+  elements.btnMobilePageTools.addEventListener('click', openMobilePageTools);
+}
+if (elements.btnClosePageTools) {
+  elements.btnClosePageTools.addEventListener('click', closeMobilePageTools);
+}
+if (elements.modalPageTools) {
+  elements.modalPageTools.addEventListener('click', (e) => {
+    if (e.target === elements.modalPageTools) closeMobilePageTools();
+  });
+}
+
+if (elements.mBtnInsertPage) {
+  elements.mBtnInsertPage.addEventListener('click', () => {
+    closeMobilePageTools();
+    openInsertPageModal();
+  });
+}
+if (elements.mBtnDuplicatePage) {
+  elements.mBtnDuplicatePage.addEventListener('click', () => {
+    closeMobilePageTools();
+    elements.btnDuplicatePage.click();
+  });
+}
+if (elements.mBtnExtractPage) {
+  elements.mBtnExtractPage.addEventListener('click', () => {
+    closeMobilePageTools();
+    elements.btnExtractPage.click();
+  });
+}
+if (elements.mBtnMergePdf) {
+  elements.mBtnMergePdf.addEventListener('click', () => {
+    closeMobilePageTools();
+    openMergePdfModal();
+  });
+}
+if (elements.mBtnRotatePage) {
+  elements.mBtnRotatePage.addEventListener('click', () => {
+    closeMobilePageTools();
+    elements.btnRotatePage.click();
+  });
+}
+if (elements.mBtnDeletePage) {
+  elements.mBtnDeletePage.addEventListener('click', () => {
+    closeMobilePageTools();
+    elements.btnDeletePage.click();
+  });
+}
+
+if (elements.mBtnExportPdf) {
+  elements.mBtnExportPdf.addEventListener('click', () => {
+    closeMobilePageTools();
+    if (!state.pdfDoc) {
+      showToast('Please open or load a PDF document first', 'info');
+      return;
+    }
+    elements.btnSaveFile.click();
+  });
+}
+
+if (elements.sidebarExportPdf) {
+  elements.sidebarExportPdf.addEventListener('click', () => {
+    closeMobileSidebar();
+    if (!state.pdfDoc) {
+      showToast('Please open or load a PDF document first', 'info');
+      return;
+    }
+    elements.btnSaveFile.click();
+  });
+}
+
+// -------------------------------------------------------------
 // Save & Download Edited PDF (Bakes Text, Whiteouts, Images, Drawings)
 // -------------------------------------------------------------
 elements.btnSaveFile.addEventListener('click', async () => {
-  if (!state.pdfDoc) return;
+  if (!state.pdfDoc) {
+    showToast('Please open or load a PDF document first', 'info');
+    return;
+  }
   
   try {
     showLoading('Baking annotations and exporting PDF...');
